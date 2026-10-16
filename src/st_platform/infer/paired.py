@@ -182,7 +182,29 @@ def wilcoxon_signed_rank(before, after, **kwargs):
     return out
 
 
-def mcnemar(before_binary, after_binary, **kwargs):
+def mcnemar(before_binary, after_binary, continuity: bool = True, **kwargs):
+    """McNemar test on paired binary outcomes (1 degree of freedom).
+
+    Only the discordant cells carry information: ``n01`` = before 0 -> after 1,
+    ``n10`` = before 1 -> after 0. Both variants are chi-square with df=1:
+
+        continuity=False    (n01 - n10)^2 / (n01 + n10)
+        continuity=True     max(0, |n01 - n10| - 1)^2 / (n01 + n10)   [Yates]
+
+    ``continuity`` defaults to True: the uncorrected form overstates
+    significance on the small discordant counts typical of medical evaluation
+    sets, and a claim of improvement must not rest on that. The numerator is
+    floored at 0 so the corrected statistic can never fall below the
+    uncorrected one when the discordant counts are equal or differ by one
+    (otherwise |n01 - n10| == 0 would yield 1/(n01+n10) > 0, i.e. a *smaller*
+    p than the uncorrected test -- an anti-conservative "correction").
+
+    All-concordant input (n01 + n10 == 0) contains no information about a
+    difference between the two conditions. It is reported explicitly as
+    statistic 0.0, p 1.0 plus ``degenerate: "all_concordant"`` rather than a
+    silent 0/0: a bare p = 1.0 would read as "no effect", which is a different
+    claim from "this test could not be run".
+    """
     b = _to_array(before_binary)
     a = _to_array(after_binary)
     if b.ndim != 1 or a.ndim != 1:
@@ -208,9 +230,13 @@ def mcnemar(before_binary, after_binary, **kwargs):
     if discordant == 0:
         statistic = 0.0
         pvalue = 1.0
+        degenerate: str | None = "all_concordant"
     else:
-        statistic = ((n01 - n10) ** 2) / discordant
+        gap = float(abs(n01 - n10))
+        numerator = max(0.0, gap - 1.0) ** 2 if continuity else gap**2
+        statistic = numerator / discordant
         pvalue = float(stats.chi2.sf(statistic, 1))
+        degenerate = None
     out = {
         "test": "mcnemar",
         "test_name": "mcnemar",
@@ -223,4 +249,6 @@ def mcnemar(before_binary, after_binary, **kwargs):
         "n01": n01,
         "n10": n10,
     }
+    if degenerate is not None:
+        out["degenerate"] = degenerate
     return out
