@@ -11,3 +11,4 @@ build/
 .env
 .pi/
 .omc/
+eval-sample.json

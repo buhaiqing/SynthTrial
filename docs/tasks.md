@@ -24,15 +24,15 @@
 | [M3](#m3)统计引擎) | infer（配对检验 · 效应量 · CUPED · 多重校正） | ✅ |
 | [M4](#m4)护栏与报告) | safety / report | ✅ |
 | [M5](#m5)结果存储) | store（内容寻址、只追加） | ✅ |
-| [M6](#m6)评测管线) | evaluation（P0 纵向切片） | ✅ 代码完成，未接线 |
-| [M7](#m7)端到端接线--正确性收口) | **接线 + 4 项正确性缺口** | 🔧 进行中 |
+| [M6](#m6)评测管线) | evaluation（P0 纵向切片） | ✅ |
+| [M7](#m7)端到端接线--正确性收口) | **接线 + 10 项收口** | ✅ |
 | [M8](#m8)文档与依赖图) | mermaid 图 / RUNBOOK / ARCHITECTURE / playbook | ✅ |
 | [M9](#m9)p1-上线放量) | st-bucket / st-lab | ⬜ |
 | [M10](#m10)p2-因果推断) | st-causal | ⬜ |
 | [M11](#m11)生产基建) | Postgres / ClickHouse / Prefect / HTTP API | ⬜ |
 | [M12](#m12)需人拍板) | Q1·Q2·Q4·Q5·Q6 | ⛔ |
 
-**基线：** 180 tests · 30 import edges · 0 TODO markers · 依赖图 `--check` 与代码一致
+**基线：** 183 tests · 30 import edges · 0 TODO markers · 依赖图 `--check` 与代码一致
 
 ---
 
@@ -146,26 +146,27 @@
 
 <a id="m7"></a>
 
-## M7 · 端到端接线 + 正确性收口 🔧
+## M7 · 端到端接线 + 正确性收口 ✅
 
 > **主 Agent 直做，不再派 subagent。** 顺序有依赖：T-M7-01 必须先做，它会连带关闭 T-M7-04/05/06。
 
 | ID | Task | 验收 | 阻塞于 | 状态 |
 |---|---|---|---|---|
-| T-M7-01 | **`stctl run` 接上 `EvaluationPipeline`** | `pytest -q tests/test_cli_run.py` → 13 passed | — | ✅ |
+| T-M7-01 | **`stctl run` 接上 `EvaluationPipeline`** | `pytest -q tests/test_cli_run.py` → 19 passed | — | ✅ |
 | T-M7-02 | 报告接入**真实 CI**（替换 `ci_low=0.0/ci_high=1.0`） | `grep -c "ci_low=0.0" src/st_platform/cli/stctl.py` → 0 | — | ✅ |
 | T-M7-03 | demo 路径也强制多重校正 | `grep -n "assert_correction_applied" src/st_platform/cli/stctl.py` | — | ✅ |
 | T-M7-04 | 失败路径转 `FAILED` | `pytest -q tests/test_cli_run.py -k failed` | T-M7-01 | ✅ |
 | T-M7-05 | 端到端落盘后可 `stctl reports` 列出 | `pytest -q tests/test_cli_run.py -k listable` | T-M7-01 | ✅ |
 | T-M7-06 | 污染检测不再恒为空集 —— **demo 与 run 两条路径都曾恒为空集** | `grep -c "contamination_detect(ds, set())" src/st_platform/cli/stctl.py` → 0；`pytest -q tests/test_cli_run.py -k contamination` | `4902592` + R2 | ✅ |
-| T-M7-07 | `contamination_result` 纳入必填可复现要素 | `pytest -q tests/test_report.py -k contamination` | **需用户确认破坏性变更** | ⛔ |
+| T-M7-07 | `contamination_result` 纳入必填可复现要素（且必须是真实检测结论，非占位） | `pytest -q tests/test_report.py -k contamination` | 用户 2026-10-17 批准破坏性变更 | ✅ |
 | T-M7-08 | 修 `ARCHITECTURE.md:41` cli→store 漂移 | `grep -n "not.*task.*,.*store" docs/ARCHITECTURE.md` → 无 | — | ✅ |
 | T-M7-09 | 修 design §11.1 自相矛盾（"st-bucket 一次都不出现"但图中出现 4 次） | 人工复核该段 | — | ✅ |
-| T-M7-10 | CI 门禁接入 `gen_dep_graph.py --check` | `grep -c 'gen_dep_graph' .github/workflows/ci.yml` ≥1 **且** `grep -c '|| true' .github/workflows/ci.yml` → 0 （门禁不能有一步永远为真）| — | ✅ |
+| T-M7-10 | CI 门禁接入 `gen_dep_graph.py --check` | `grep -c 'gen_dep_graph' .github/workflows/ci.yml` ≥1 **且** `grep -c '\|\| true' .github/workflows/ci.yml` → 0 （门禁不能有一步永远为真）| — | ✅ |
 
-**T-M7-07 说明：** 把 `contamination_result` 加入必填会让**现有全部报告失效**（破坏性）。
-design.md §4.1 要求它属于五要素，但实现只校验 5 项中的 4 项 + seed。这是设计与实现的真实分歧，
-不是我擅自能定的 → 已标 ⛔。
+**T-M7-07 说明：** 这曾是设计与实现的真实分歧（design.md §4.1 要求五要素，实现只校验四项 + seed），
+用户 2026-10-17 批准破坏性变更后关闭；P0 尚无落盘报告，失效面为零。
+仅要求字段非空不够：`{"contaminated": false}` 不可能由 `contamination_detect` 产生，
+它的存在恰恰说明检查从未运行 —— 故按真实结论的键集校验（design.md §3.2：不可见 ≠ 未曝光）。
 
 ---
 
@@ -264,7 +265,7 @@ cd /tmp/mmd && node validate.mjs   # mermaid v11 parser，4/4 OK
 | T-M12-03 | **Q2** `st-infer` vs `st-causal` 命名撞车 | 命名一致性 | M003 改 `st-stats` | ⛔ |
 | T-M12-04 | **Q1** M001 代号 | 命名一致性 | `st-lab` | ⛔ |
 | T-M12-05 | **Q6** 是否需影子模式（新旧模型同时在线） | M002 是否提前到 P0 | 倾向 P1 | ⛔ |
-| T-M12-06 | T-M7-07 破坏性变更是否接受 | 全部现有报告失效 | 待裁决 | ⛔ |
+| T-M12-06 | T-M7-07 破坏性变更是否接受 | 全部现有报告失效 | **已批准 2026-10-17**；P0 无落盘报告 | ✅ |
 
 ---
 
