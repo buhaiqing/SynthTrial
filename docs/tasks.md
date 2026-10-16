@@ -46,8 +46,8 @@
 | T-M0-02 | 重画模块边界（而非重排优先级） | `grep -c "^### M00" docs/design.md` → 6 | `design.md` §3 |
 | T-M0-03 | 指标可测性降级规范（"零漏报" → SLO） | `grep -n "降级为可承诺 SLO" docs/design.md` | `design.md` §7 |
 | T-M0-04 | Go+Python 架构与数据流 | `test -f docs/design_go_python.md` | 169 行 |
-| T-M0-05 | 项目纪律（含 D-1…D-11） | `grep -c "\| D-" AGENTS.md` → 11 | `AGENTS.md` §7 |
-| T-M0-06 | 中英双语 README + MIT | `test -f README.zh.md && head -1 LICENSE \| grep -q MIT` | `eadf5a7` |
+| T-M0-05 | 项目纪律（含 D-1…D-12） | `grep -c '^\| D-' AGENTS.md` → 12 | `AGENTS.md` §7 |
+| T-M0-06 | 中英双语 README + MIT | `test -f README.zh.md && grep -q MIT LICENSE` | `eadf5a7` |
 
 ---
 
@@ -153,15 +153,15 @@
 | ID | Task | 验收 | 阻塞于 | 状态 |
 |---|---|---|---|---|
 | T-M7-01 | **`stctl run` 接上 `EvaluationPipeline`** | `pytest -q tests/test_cli_run.py` → 19 passed | — | ✅ |
-| T-M7-02 | 报告接入**真实 CI**（替换 `ci_low=0.0/ci_high=1.0`） | `grep -c "ci_low=0.0" src/st_platform/cli/stctl.py` → 0 | — | ✅ |
+| T-M7-02 | 报告接入**真实 CI**（替换 `ci_low=0.0/ci_high=1.0`） | `! grep -q "ci_low=0.0" src/st_platform/cli/stctl.py` | — | ✅ |
 | T-M7-03 | demo 路径也强制多重校正 | `grep -n "assert_correction_applied" src/st_platform/cli/stctl.py` | — | ✅ |
 | T-M7-04 | 失败路径转 `FAILED` | `pytest -q tests/test_cli_run.py -k failed` | T-M7-01 | ✅ |
 | T-M7-05 | 端到端落盘后可 `stctl reports` 列出 | `pytest -q tests/test_cli_run.py -k listable` | T-M7-01 | ✅ |
-| T-M7-06 | 污染检测不再恒为空集 —— **demo 与 run 两条路径都曾恒为空集** | `grep -c "contamination_detect(ds, set())" src/st_platform/cli/stctl.py` → 0；`pytest -q tests/test_cli_run.py -k contamination` | `4902592` + R2 | ✅ |
+| T-M7-06 | 污染检测不再恒为空集 —— **demo 与 run 两条路径都曾恒为空集** | `! grep -qF "contamination_detect(ds, set())" src/st_platform/cli/stctl.py`；`pytest -q tests/test_cli_run.py -k contamination` | `4902592` + R2 | ✅ |
 | T-M7-07 | `contamination_result` 纳入必填可复现要素（且必须是真实检测结论，非占位） | `pytest -q tests/test_report.py -k contamination` | 用户 2026-10-17 批准破坏性变更 | ✅ |
-| T-M7-08 | 修 `ARCHITECTURE.md:41` cli→store 漂移 | `grep -n "not.*task.*,.*store" docs/ARCHITECTURE.md` → 无 | — | ✅ |
+| T-M7-08 | 修 `ARCHITECTURE.md:41` cli→store 漂移 | `! grep -qE "not.*task.*,.*store" docs/ARCHITECTURE.md` | — | ✅ |
 | T-M7-09 | 修 design §11.1 自相矛盾（"st-bucket 一次都不出现"但图中出现 4 次） | 人工复核该段 | — | ✅ |
-| T-M7-10 | CI 门禁接入 `gen_dep_graph.py --check` | `grep -c 'gen_dep_graph' .github/workflows/ci.yml` ≥1 **且** `grep -c '\|\| true' .github/workflows/ci.yml` → 0 （门禁不能有一步永远为真）| — | ✅ |
+| T-M7-10 | CI 门禁接入 `gen_dep_graph.py --check` | `grep -c 'gen_dep_graph' .github/workflows/ci.yml` ≥1 **且** `! grep -qF '|| true' .github/workflows/ci.yml` （门禁不能有一步永远为真）| — | ✅ |
 | T-M7-11 | **未检测 ≠ 已检测且无重叠** —— 无 `--train-signatures` 时不得报 `contaminated=False` / `promotable=true` | `pytest -q tests/test_cli_run.py -k without_train_signatures` | T-M7-07 | ✅ |
 
 **T-M7-11 说明：** 接通 T-M7-07 时发现一个更靠上游的缺陷。T-M7-07 要求第五要素是**真实结论**，
