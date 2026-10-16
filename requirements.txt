@@ -1,0 +1,9 @@
+statsmodels>=0.14
+numpy>=1.26
+scipy>=1.11
+pandas>=2.1
+pydantic>=2.0
+fastapi>=0.115
+pytest>=8
+pytest-cov>=4
+ruff>=0.6
