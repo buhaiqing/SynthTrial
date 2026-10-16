@@ -391,50 +391,58 @@ stateDiagram-v2
 
 ### 11.4 代码实际依赖方向（由 `src/` 的 import 生成）
 
+> ⚙️ **本图由 `python3 tools/gen_dep_graph.py` 生成，请勿手改。**
+> `python3 tools/gen_dep_graph.py --check` 在图与真实 import 不一致时 exit 1，
+> 可直接挂进 CI。手绘图会静默漂移：代码改动之后它看上去依然自洽。
+
 ```mermaid
 flowchart LR
-    CLI["cli/stctl.py"]
-    TASK["task/"]
-    INFERENCE["inference/"]
-    INFER["infer/"]
-    SAFETY["safety/"]
-    REPORT["report/"]
-    REGISTRY["registry/"]
-    DATASET["dataset/"]
-    STORE["store.py"]
-    AUDIT["audit/"]
-    COMMON["common/"]
-    EVAL["evaluation/<br/>P0 评测管线<br/>⚠️ 合并中 · 尚未落地"]
+    N_AUDIT["audit/"]
+    N_CLI["cli/stctl.py"]
+    N_COMMON["common/"]
+    N_DATASET["dataset/"]
+    N_EVALUATION["evaluation/"]
+    N_INFER["infer/"]
+    N_INFERENCE["inference/"]
+    N_REGISTRY["registry/"]
+    N_REPORT["report/"]
+    N_SAFETY["safety/"]
+    N_STORE["store.py"]
+    N_TASK["task/"]
+    N_VERSION["version"]
 
-    CLI --> TASK
-    CLI --> DATASET
-    CLI --> INFER
-    CLI --> SAFETY
-    CLI --> REPORT
-    CLI --> REGISTRY
-    CLI --> STORE
-    CLI --> AUDIT
-    CLI --> COMMON
-    EVAL --> TASK
-    EVAL --> INFERENCE
-    EVAL --> INFER
-    EVAL --> SAFETY
-    EVAL --> REPORT
-    EVAL --> STORE
-    EVAL --> DATASET
+    N_CLI --> N_AUDIT
+    N_CLI --> N_COMMON
+    N_CLI --> N_DATASET
+    N_CLI --> N_INFER
+    N_CLI --> N_REGISTRY
+    N_CLI --> N_REPORT
+    N_CLI --> N_SAFETY
+    N_CLI --> N_STORE
+    N_DATASET --> N_COMMON
+    N_EVALUATION --> N_COMMON
+    N_EVALUATION --> N_DATASET
+    N_EVALUATION --> N_INFER
+    N_EVALUATION --> N_INFERENCE
+    N_EVALUATION --> N_REGISTRY
+    N_EVALUATION --> N_REPORT
+    N_EVALUATION --> N_SAFETY
+    N_EVALUATION --> N_STORE
+    N_EVALUATION --> N_TASK
+    N_EVALUATION --> N_VERSION
+    N_INFERENCE --> N_COMMON
+    N_REGISTRY --> N_COMMON
+    N_REPORT --> N_COMMON
+    N_REPORT --> N_SAFETY
+    N_SAFETY --> N_COMMON
+    N_STORE --> N_COMMON
+    N_TASK --> N_COMMON
+    N_TASK --> N_DATASET
 
-    SAFETY --> COMMON
-    TASK --> COMMON
-    TASK --> DATASET
-    DATASET --> COMMON
-    STORE --> COMMON
-    REPORT --> SAFETY
-    INFERENCE --> COMMON
-
-    classDef leaf fill:#eceff1,stroke:#607d8b
     classDef orch fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    class COMMON,DATASET,STORE leaf
-    class CLI,EVAL orch
+    classDef leaf fill:#eceff1,stroke:#607d8b
+    class N_CLI,N_EVALUATION orch
+    class N_AUDIT,N_COMMON,N_DATASET,N_REGISTRY,N_STORE leaf
 ```
 
 **方向规则（评审用）：**
