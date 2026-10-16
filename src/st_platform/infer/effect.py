@@ -57,26 +57,45 @@ def absolute_lift_ci95(before, after, alpha: float = 0.05) -> tuple[float, float
 
 
 def relative_lift_ci95(before, after, alpha: float = 0.05) -> tuple[float, float]:
-    """95% CI on relative lift = abs_lift_ci / before_mean."""
-    before_mean = float(np.mean(np.asarray(before, dtype=float)))
-    if before_mean == 0:
+    """95% CI for relative lift = (mean(after) - mean(before)) / mean(before).
+
+    Uses the delta method. ``before_mean`` is a *sampled* mean carrying its own
+    variance, so dividing the absolute-difference CI by it understates
+    uncertainty. The error is one-directional (always too narrow) and explodes
+    as the baseline rate approaches zero -- exactly the rare-adverse-event case
+    where a too-narrow interval reads as "no meaningful harm" when the honest
+    interval cannot rule it out.
+
+    Denominator variance is therefore propagated analytically.
+    """
+    b = np.asarray(before, dtype=float).ravel()
+    a = np.asarray(after, dtype=float).ravel()
+    if b.shape != a.shape:
+        raise ValueError("before and after must have same shape")
+
+    n = b.size
+    b_bar = float(b.mean())
+    if b_bar == 0:
         raise ValueError("relative_lift_ci undefined when before_mean == 0")
-    lo, hi = absolute_lift_ci95(before, after, alpha)
-    ci_lo = lo / before_mean
-    ci_hi = hi / before_mean
-    if ci_lo > ci_hi:
-        ci_lo, ci_hi = ci_hi, ci_lo
-    return (float(ci_lo), float(ci_hi))
 
+    a_bar = float(a.mean())
+    point = (a_bar - b_bar) / b_bar
+    if n < 2:
+        return (point, point)
 
-# Aliases to maximize naming compatibility.
-ci95_absolute = absolute_lift_ci95
-ci95_relative = relative_lift_ci95
-abs_lift_ci95 = absolute_lift_ci95
-rel_lift_ci95 = relative_lift_ci95
-ci95_abs = absolute_lift_ci95
-ci95_rel = relative_lift_ci95
-ci95_mean = ci95
-# Functional-ish names.
-absolute_ci95 = absolute_lift_ci95
-relative_ci95 = relative_lift_ci95
+    var_a = float(a.var(ddof=1)) / n
+    var_b = float(b.var(ddof=1)) / n
+    cov_ab = float(np.cov(a, b, ddof=1)[0, 1]) / n
+
+    # Var((a_bar - b_bar)/b_bar) via gradient of R w.r.t. (a_bar, b_bar)
+    radicand = (
+        var_a / (b_bar**2)
+        + (a_bar**2 / b_bar**4) * var_b
+        - 2 * (a_bar / b_bar**3) * cov_ab
+    )
+    if radicand < 0:
+        # Only floating-point noise can push this negative; clamp, don't raise.
+        radicand = 0.0
+    se = float(np.sqrt(radicand))
+    tcrit = float(stats.t.ppf(1 - alpha / 2, df=n - 1))
+    return (float(point - tcrit * se), float(point + tcrit * se))

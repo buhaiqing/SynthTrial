@@ -174,7 +174,7 @@ class ReportRenderer:
             lines.append(f"- Accuracy after: {acc_after}")
         lines.append("")
         lines.append("### Statistical results")
-        lines.append("| Test | p_raw | p_corrected |")
+        lines.append("| Test | p_raw | p_corrected (authoritative after correction) |")
         lines.append("|---|---|---|")
         for r in (results or []):
             if isinstance(r, dict):
@@ -205,7 +205,11 @@ class ReportRenderer:
             lines.append("## Coverage")
             lines.append(f"- Registered: {len(cov.registered_rule_ids)}")
             lines.append(f"- Evaluated: {len(cov.evaluated_rule_ids)}")
-            lines.append(f"- Recall: {cov.recall()}")
+            lines.append(f"- Covered: {cov.covered_rule_count}")
+            lines.append(f"- Uncovered: {cov.uncovered_rule_count}")
+            lines.append(f"- Uncovered ratio: {cov.uncovered_ratio}")
+            lines.append(f"- Coverage ratio: {cov.coverage_ratio}")
+            lines.append(f"- Recall (known risks): {cov.recall()}")
             lines.append("")
 
         return "\n".join(lines)
