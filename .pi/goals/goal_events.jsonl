@@ -1,1 +1,2 @@
 {"type":"goal_created","goalId":"mvb2wir1-swseuk","objective":"从 0 到 1 开发 SynthTrial（st-platform v2.0）：基于 design.md/AGENTS.md 的离线评测 P0 闭环（指标注册表 + 评测编排 + 配对统计 + 护栏 + 报告 + 审计台账），Go/Python 混合微服务架构；遵守 TDD + GCL + spec/plan first + mandatory outcome backfill 业界实践。","sisyphus":false,"autoContinue":true,"at":"2026-10-16T14:44:26.989Z"}
+{"type":"goal_paused","goalId":"mvb2wir1-swseuk","reason":"user","status":"paused","at":"2026-10-16T14:53:28.551Z"}
