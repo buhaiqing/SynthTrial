@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from st_platform.audit.ledger import AuditLedger
 from st_platform.common.types import SafetyVerdictTier
 from st_platform.dataset.core import Dataset, DatasetSplit, case_signature, contamination_violated
 from st_platform.evaluation import (
@@ -134,6 +135,7 @@ def clean_train_signatures() -> list[str]:
     """
     return [case_signature({"case_id": "TRAIN-ONLY", "text": "not in the eval set"})]
 
+
 def run_once(
     store: ReportStore,
     *,
@@ -142,6 +144,7 @@ def run_once(
     candidate_runner: MockRunner | None = None,
     params: dict | None = None,
     train_signatures: list[str] | None = None,
+    ledger: AuditLedger | None = None,
 ) -> EvaluationOutcome:
     """One full run over freshly built (but content-identical) inputs."""
     dataset = make_dataset()
@@ -156,7 +159,48 @@ def run_once(
         redlines=redlines if redlines is not None else [ContaminationRedline()],
         store=store,
         train_signatures=train_signatures,
+        ledger=ledger,
     )
+
+
+def test_pipeline_records_the_evaluation_in_the_audit_ledger(tmp_path):
+    """T-M7-12: the real evaluation path must leave recoverable evidence.
+
+    ``AuditLedger`` previously had exactly one caller -- ``cmd_demo`` -- so ``cmd_run``
+    wrote no audit events at all and the ledger named in design.md 4.1 was decoration.
+    """
+    store = ReportStore(tmp_path / "reports")
+    ledger = AuditLedger(path=tmp_path / "audit.jsonl")
+    outcome = run_once(store, train_signatures=clean_train_signatures(), ledger=ledger)
+
+    assert ledger.verify() is True
+    types = [e.event_type for e in ledger.entries]
+    assert "evaluation.completed" in types, f"pipeline must record its verdict: {types}"
+    ev = ledger.entries[types.index("evaluation.completed")]
+    assert ev.payload["report_hash"] == outcome.report_hash
+    assert ev.payload["verdict"] == outcome.verdict.tier.value
+    assert ev.payload["task_id"] == outcome.task_id
+    # and it survives the process that wrote it
+    assert AuditLedger(path=tmp_path / "audit.jsonl").verify() is True
+
+
+def test_audit_timestamps_do_not_leak_into_the_report_hash(tmp_path):
+    """Every ledger entry carries ``created_at``; that must not perturb report_hash.
+
+    Identical inputs must still replay to an identical report (design.md 4.1), even
+    though the two runs below were audited at different instants.
+    """
+    a = run_once(
+        ReportStore(tmp_path / "s1"),
+        train_signatures=clean_train_signatures(),
+        ledger=AuditLedger(path=tmp_path / "a.jsonl"),
+    )
+    b = run_once(
+        ReportStore(tmp_path / "s2"),
+        train_signatures=clean_train_signatures(),
+        ledger=AuditLedger(path=tmp_path / "b.jsonl"),
+    )
+    assert a.report_hash == b.report_hash, "an audit timestamp must not change the report"
 
 
 # (a) clean PASS run ---------------------------------------------------------

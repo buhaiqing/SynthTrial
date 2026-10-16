@@ -18,6 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from st_platform.audit.ledger import AuditLedger
 from st_platform.cli.stctl import build_parser, cmd_reports, cmd_run, cmd_sample
 from st_platform.dataset.core import case_signature
 from st_platform.store import ReportStore
@@ -113,6 +114,49 @@ def test_run_json_mode_is_parseable(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert rc == 0
     assert {"task_id", "report_hash", "verdict", "promotable", "report"} <= set(payload)
+
+
+# ---------------------------------------------------------------- audit trail
+
+
+def test_run_persists_a_durable_audit_trail(tmp_path, capsys):
+    """T-M7-12: a real evaluation must leave recoverable, verifiable evidence.
+
+    ``AuditLedger`` was constructed only by ``cmd_demo``, so ``cmd_run`` wrote no audit
+    events at all — and the ledger was in-memory, so even the demo's chain vanished when
+    the process exited. Nothing about a real evaluation was recoverable afterwards.
+    """
+    ds = _write_dataset(tmp_path)
+    cmd_run(_args(tmp_path, ds))
+    capsys.readouterr()
+
+    trail = tmp_path / "store" / "audit.jsonl"
+    assert trail.exists(), "cmd_run must persist an audit trail beside its reports"
+    ledger = AuditLedger(path=trail)
+    assert ledger.verify() is True, "a persisted trail must verify"
+    types = [e.event_type for e in ledger.entries]
+    assert types[0] == "task.submitted"
+    assert "evaluation.completed" in types, "the pipeline's verdict must be auditable"
+    assert types[-1] == "task.completed"
+    # the trail must never be listed by `stctl reports` as if it were a result
+    assert "audit" not in ReportStore(tmp_path / "store").list_hashes()
+
+
+def test_failed_run_records_task_failed_in_the_audit_trail(tmp_path, capsys):
+    """A failure is precisely the kind of event an audit trail exists to preserve."""
+    ds = _write_dataset(tmp_path)
+    rows = json.loads(ds.read_text())["rows"]
+    rows.append(dict(rows[0]))  # duplicate case_id -> UnalignedCases
+    ds.write_text(json.dumps({"dataset_id": "cards-test", "rows": rows}, ensure_ascii=False))
+
+    rc = cmd_run(_args(tmp_path, ds))
+    capsys.readouterr()
+    assert rc != 0
+
+    ledger = AuditLedger(path=tmp_path / "store" / "audit.jsonl")
+    types = [e.event_type for e in ledger.entries]
+    assert "task.failed" in types, f"a failure must be auditable, got: {types}"
+    assert ledger.verify() is True
 
 
 # ---------------------------------------------------------------- gate

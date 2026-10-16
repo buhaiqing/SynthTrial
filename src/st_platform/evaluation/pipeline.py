@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
+from st_platform.audit.ledger import AuditLedger
 from st_platform.common.freeze import freeze
 from st_platform.dataset.core import Dataset, contamination_detect
 from st_platform.evaluation.outcome import EvaluationOutcome, GuardrailVerdict
@@ -236,6 +237,7 @@ class EvaluationPipeline:
         redlines: Sequence[Any],
         store: ReportStore,
         train_signatures: Iterable[str] | None = None,
+        ledger: AuditLedger | None = None,
     ) -> EvaluationOutcome:
         """Evaluate the candidate against the baseline and persist the report."""
         self._check_runners(task, baseline_runner, candidate_runner)
@@ -299,7 +301,7 @@ class EvaluationPipeline:
             }
         )
 
-        return EvaluationOutcome(
+        outcome = EvaluationOutcome(
             task_id=task.task_id,
             content_hash=task.content_hash,
             report_hash=report_hash,
@@ -312,6 +314,25 @@ class EvaluationPipeline:
             accuracy_after=accuracy_after,
             report_markdown=markdown,
         )
+
+        if ledger is not None:
+            # The verdict and the report address are the audit-worthy facts. Deliberately
+            # NOT the payload or the markdown: the ledger carries created_at, and nothing
+            # time-derived may reach report_hash (design.md 4.1 reproducibility).
+            # ``promotable`` is read off the outcome rather than recomputed, so the audit
+            # trail cannot disagree with the artifact about what was promotable.
+            ledger.append(
+                "evaluation.completed",
+                {
+                    "task_id": outcome.task_id,
+                    "content_hash": outcome.content_hash,
+                    "report_hash": outcome.report_hash,
+                    "verdict": outcome.verdict.tier.value,
+                    "promotable": outcome.promotable,
+                },
+            )
+
+        return outcome
 
     @staticmethod
     def _effect_size_section(results: Sequence[PairedResult]) -> str:

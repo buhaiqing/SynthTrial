@@ -197,6 +197,11 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 DEFAULT_STORE_DIR = "reports"
 
+#: Audit trail written beside the reports. ".jsonl" is deliberate, not cosmetic:
+#: ReportStore.list_hashes() globs "*.json", so a ".json" audit file would be listed
+#: by `stctl reports` as if it were an evaluation result.
+AUDIT_LOG_NAME = "audit.jsonl"
+
 
 def cmd_reports(args: argparse.Namespace) -> int:
     """List reports persisted in a ReportStore.
@@ -418,12 +423,25 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 2
     service = TaskService()
     store = ReportStore(getattr(args, "store", None) or DEFAULT_STORE_DIR)
+    # Durable hash-linked evidence for this run (T-M7-12). Before this, the ledger was
+    # constructed only by cmd_demo, so a real evaluation left no audit trail at all.
+    ledger = AuditLedger(path=store.root / AUDIT_LOG_NAME)
 
     task = service.submit(
         model_version=candidate_version,
         dataset=dataset,
         seed=int(getattr(args, "seed", 0)),
         params={"baseline_model_version": baseline_version},
+    )
+    ledger.append(
+        "task.submitted",
+        {
+            "task_id": task.task_id,
+            "content_hash": task.content_hash,
+            "model_version": candidate_version,
+            "dataset_sha": task.dataset_sha,
+            "seed": task.seed,
+        },
     )
     task = service.transition(task.task_id, TaskState.RUNNING)
 
@@ -453,14 +471,29 @@ def cmd_run(args: argparse.Namespace) -> int:
             redlines=redlines,
             store=store,
             train_signatures=train_signatures,
+            ledger=ledger,
         )
     except Exception as exc:  # noqa: BLE001 -- CLI boundary: any failure is a FAILED task
         failed = service.transition(task.task_id, TaskState.FAILED)
+        # a failure is exactly the kind of event an audit trail exists to keep
+        ledger.append(
+            "task.failed",
+            {"task_id": failed.task_id, "error": f"{type(exc).__name__}: {exc}"},
+        )
         print(f"error: task_id={failed.task_id} state=FAILED", file=sys.stderr)
         print(f"       {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
     done = service.transition(task.task_id, TaskState.DONE)
+    ledger.append(
+        "task.completed",
+        {
+            "task_id": done.task_id,
+            "report_hash": outcome.report_hash,
+            "verdict": outcome.verdict.tier.value,
+            "promotable": outcome.promotable,
+        },
+    )
     contamination = outcome.reproducibility.contamination_result or {}
 
     if getattr(args, "json", False):

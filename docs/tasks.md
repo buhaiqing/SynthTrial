@@ -163,6 +163,7 @@
 | T-M7-09 | 修 design §11.1 自相矛盾（"st-bucket 一次都不出现"但图中出现 4 次） | 人工复核该段 | — | ✅ |
 | T-M7-10 | CI 门禁接入 `gen_dep_graph.py --check` | `grep -c 'gen_dep_graph' .github/workflows/ci.yml` ≥1 **且** `! grep -qF '|| true' .github/workflows/ci.yml` （门禁不能有一步永远为真）| — | ✅ |
 | T-M7-11 | **未检测 ≠ 已检测且无重叠** —— 无 `--train-signatures` 时不得报 `contaminated=False` / `promotable=true` | `pytest -q tests/test_cli_run.py -k without_train_signatures` | T-M7-07 | ✅ |
+| T-M7-12 | **审计台账接入真实路径且可持久化** —— 此前只有 `cmd_demo` 一个调用方且完全在内存 | `pytest -q tests/test_cli_run.py -k audit` | — | ✅ |
 
 **T-M7-11 说明：** 接通 T-M7-07 时发现一个更靠上游的缺陷。T-M7-07 要求第五要素是**真实结论**，
 但 `EvaluationPipeline.run` 写着 `set(train_signatures or ())`：缺语料与空语料被压成同一个空集，
@@ -174,6 +175,17 @@ CLI 自己的 `_load_train_signatures` 文档字符串早就写明 `None` 必须
 + 计数为 `None`；新增唯一读者 `contamination_violated()`，**失败关闭**（非实测 `False` 即违规），
 两条 redline 均委托它。代价是**变严**：无语料的运行现在 `BLOCK`，但有效性数字仍完整产出
 （拒绝放量 ≠ 丢失证据）。变异验证：仅回退 pipeline 那一行即失败 3 例、其余 61 例仍绿。
+
+**T-M7-12 说明：** 对照目标里点名的六个 P0 组件逐个取证时发现的缺口。`AuditLedger` 只有一个调用方
+（`cmd_demo`），T-M7-01 接通的真实路径 `cmd_run` **一条审计事件都不写**；而且台账只在内存里，
+`append` 只往 list 里追加，`export()` 返回后随进程消失 —— 逐一条真实评测都没留下可取证的东西。
+与 playbook 第 13 行同形：单测测的是模块，没人测接口。
+
+修法：`AuditLedger(path=...)` 按 JSONL 逐行追加并在打开时续链（跨进程若从 genesis 重启，
+链照样 verify，却什么都没证明）；`EvaluationPipeline.run(ledger=)` 记 `evaluation.completed`，
+`cmd_run` 记 `task.submitted` / `task.completed` / `task.failed`。文件名用 `.jsonl` 是刻意的：
+`ReportStore.list_hashes()` glob `*.json`，用 `.json` 会被 `stctl reports` 当成评测结果列出来。
+变异验证 3 项（内存台账 / 删 pipeline 追加 / 改名为 `.json`），每项精确命中对应守卫、无附带损伤。
 
 **T-M7-07 说明：** 这曾是设计与实现的真实分歧（design.md §4.1 要求五要素，实现只校验四项 + seed），
 用户 2026-10-17 批准破坏性变更后关闭；P0 尚无落盘报告，失效面为零。
