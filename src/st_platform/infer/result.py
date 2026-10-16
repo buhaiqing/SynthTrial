@@ -41,6 +41,6 @@ def assert_correction_applied(results: Any) -> None:
     for r in seq:
         pc = getattr(r, "p_corrected", None)
         if isinstance(r, dict):
-            pc = r.get("p_corrected", r.get("p_corrected"))
+            pc = r.get("p_corrected")
         if pc is None:
             raise ValueError("correction must be applied when more than one test is run")
