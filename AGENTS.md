@@ -108,6 +108,7 @@ Q3 已解。**Q4/Q5 未解前，M006 护栏的验收标准无法定稿** —— 
 ## 6 · 指针
 
 - **需求**：`docs/design.md`（权威源，含模块 / 功能 / 验收标准 / 待决事项）
+- **任务跟踪**：`docs/tasks.md`（开发进度唯一权威源：M0–M12 milestone + 细粒度 Task）
 - **Go+Python 架构**：`docs/design_go_python.md`
 - 设计文档：`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
 - 执行计划：`docs/superpowers/plans/`
