@@ -108,14 +108,22 @@ class SafetyChecker:
         blocking_ids = []
         warning_ids = []
         passing_fired = []
+        unregistered_fired: list[str] = []
         for rid in fired:
             sev = self._severity_of(rid)
+            if sev is None:
+                # Unknown id: never downgrade to PASS; classify as BLOCK unless the
+                # caller explicitly marked it via a provided severity_map. Medical
+                # safety default is fail-closed.
+                sev = SafetyVerdictTier.BLOCK
+                unregistered_fired.append(rid)
             if sev == SafetyVerdictTier.BLOCK:
                 blocking_ids.append(rid)
             elif sev == SafetyVerdictTier.WARN:
                 warning_ids.append(rid)
             else:
                 passing_fired.append(rid)
+
 
         # guardrail-before-effect: any BLOCK fired => BLOCK regardless
         if blocking_ids:
@@ -134,6 +142,6 @@ class SafetyChecker:
             uncovered_ratio=coverage.uncovered_ratio,
             passing_ids=passing_fired,
             fired_ids=fired,
-            evidence=dict(results_by_rule),
+            evidence={**dict(results_by_rule), "_unregistered_fired": list(unregistered_fired) if 'unregistered_fired' in dir() else []},
         )
         return verdict
