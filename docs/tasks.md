@@ -265,7 +265,7 @@ cd /tmp/mmd && node validate.mjs   # mermaid v11 parser，4/4 OK
 | ID | Task | 验收 | 状态 |
 |---|---|---|---|
 | T-M10-01 | 触发条件核验（三条全满足） | 逐条给出证据 | ⬜ |
-| T-M10-02 | DiD（含平行趋势检验） | 平行趋势自动化检验 | ⬜ |
+| T-M10-02 | DiD（含平行趋势检验） | `pytest -q tests/test_causal_did.py` | ✅ |
 | T-M10-03 | Synthetic Control | — | ⬜ |
 | T-M10-04 | RDD / PSM / IV / ITS | 至少 5 种算法 | ⬜ |
 
