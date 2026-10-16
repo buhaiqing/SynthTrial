@@ -231,3 +231,49 @@ def test_list_all_returns_insertion_order_snapshot():
     assert [t.task_id for t in svc.list_all()] == [a.task_id, b.task_id]
     svc.list_all().clear()  # returned list is a copy
     assert len(svc.list_all()) == 2
+
+
+# --- Deep immutability (Critic-Task BLOCKER, reproduced 2026-10-17) ---
+# Pydantic frozen=True blocks attribute reassignment but NOT in-place mutation
+# of nested containers. Repro before fix: t.params["k"]=9 drifted content_hash
+# 74b86887061c -> a2e16483b764; retry() shallow-copied params so mutating the
+# retry's list corrupted the parent ([1,2] -> [1,2,3]). Violates D-3.
+
+def test_task_params_nested_mutation_forbidden_and_hash_stable():
+    svc = TaskService()
+    t = svc.submit(model_version="m1", dataset=make_dataset(), seed=42,
+                   params={"nested": {"k": 1}, "items": [1, 2]})
+    h = t.content_hash
+    with pytest.raises((TypeError, AttributeError)):
+        t.params["nested"] = {"k": 2}
+    with pytest.raises((TypeError, AttributeError)):
+        t.params["nested"]["k"] = 2
+    with pytest.raises((TypeError, AttributeError)):
+        t.params["items"].append(3)
+    assert t.content_hash == h, "content_hash drifted after mutation attempt"
+
+
+def test_submit_replay_shares_only_frozen_state():
+    """Replay returns the same instance; that is safe only if its state cannot
+    be mutated through either handle."""
+    svc = TaskService()
+    a = svc.submit(model_version="m2", dataset=make_dataset(), seed=1, params={"k": 1})
+    b = svc.submit(model_version="m2", dataset=make_dataset(), seed=1, params={"k": 1})
+    assert a is b
+    with pytest.raises((TypeError, AttributeError)):
+        b.params["k"] = 999
+    assert a.content_hash == b.content_hash
+
+
+def test_retry_params_isolated_from_parent():
+    svc = TaskService()
+    p = svc.submit(model_version="m3", dataset=make_dataset(), seed=2, params={"w": [1, 2]})
+    r = svc.retry(p.task_id)
+    # Either isolation (copy) or immutability (freeze) must hold; corruption never.
+    try:
+        r.params["w"].append(3)
+    except (TypeError, AttributeError):
+        pass  # frozen: acceptable
+    parent_now = svc.get(p.task_id)
+    assert parent_now.params.get("w") != [1, 2, 3], "parent task corrupted via retry"
+    assert parent_now.content_hash == p.content_hash

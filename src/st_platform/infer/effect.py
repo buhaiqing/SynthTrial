@@ -26,8 +26,7 @@ def _mean_ci(arr: Sequence[float], alpha: float = 0.05) -> tuple[float, float]:
     a = np.asarray(arr, dtype=float).ravel()
     n = a.size
     if n < 2:
-        m = float(np.mean(a)) if n else float("nan")
-        return (m, m)
+        raise ValueError(f"mean CI needs at least 2 observations, got n={n}")
     m = float(np.mean(a))
     se = float(np.std(a, ddof=1) / np.sqrt(n))
     tcrit = float(stats.t.ppf(1 - alpha / 2, df=n - 1))
@@ -48,8 +47,10 @@ def absolute_lift_ci95(before, after, alpha: float = 0.05) -> tuple[float, float
     diff = a - b
     n = diff.size
     if n < 2:
-        m = float(np.mean(diff)) if n else float("nan")
-        return (m, m)
+        raise ValueError(
+            f"absolute lift CI needs at least 2 pairs, got n={n}; "
+            "a point interval would read as certainty we do not have"
+        )
     m = float(np.mean(diff))
     se = float(np.std(diff, ddof=1) / np.sqrt(n))
     tcrit = float(stats.t.ppf(1 - alpha / 2, df=n - 1))
@@ -81,18 +82,17 @@ def relative_lift_ci95(before, after, alpha: float = 0.05) -> tuple[float, float
     a_bar = float(a.mean())
     point = (a_bar - b_bar) / b_bar
     if n < 2:
-        return (point, point)
+        raise ValueError(
+            f"relative lift CI needs at least 2 pairs, got n={n}; "
+            "a point interval would read as certainty we do not have"
+        )
 
     var_a = float(a.var(ddof=1)) / n
     var_b = float(b.var(ddof=1)) / n
     cov_ab = float(np.cov(a, b, ddof=1)[0, 1]) / n
 
     # Var((a_bar - b_bar)/b_bar) via gradient of R w.r.t. (a_bar, b_bar)
-    radicand = (
-        var_a / (b_bar**2)
-        + (a_bar**2 / b_bar**4) * var_b
-        - 2 * (a_bar / b_bar**3) * cov_ab
-    )
+    radicand = var_a / (b_bar**2) + (a_bar**2 / b_bar**4) * var_b - 2 * (a_bar / b_bar**3) * cov_ab
     if radicand < 0:
         # Only floating-point noise can push this negative; clamp, don't raise.
         radicand = 0.0

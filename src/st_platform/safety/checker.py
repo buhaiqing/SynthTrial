@@ -94,10 +94,14 @@ class SafetyChecker:
             coverage = CoverageReport(registered=registered_ids, evaluated=evaluated_ids)
         elif not isinstance(coverage, CoverageReport):
             try:
-                coverage = CoverageReport(registered=getattr(coverage, "registered_rule_ids", None) or [],
-                                           evaluated=getattr(coverage, "evaluated_rule_ids", None) or [])
+                coverage = CoverageReport(
+                    registered=getattr(coverage, "registered_rule_ids", None) or [],
+                    evaluated=getattr(coverage, "evaluated_rule_ids", None) or [],
+                )
             except (ValueError, TypeError, AttributeError):
-                coverage = CoverageReport(registered=set(rule_map.keys()), evaluated=set(results_by_rule.keys()))
+                coverage = CoverageReport(
+                    registered=set(rule_map.keys()), evaluated=set(results_by_rule.keys())
+                )
 
         # Determine fired rules (value True means rule fired / violated)
         fired: list[str] = []
@@ -124,7 +128,6 @@ class SafetyChecker:
             else:
                 passing_fired.append(rid)
 
-
         # guardrail-before-effect: any BLOCK fired => BLOCK regardless
         if blocking_ids:
             tier = SafetyVerdictTier.BLOCK
@@ -142,6 +145,11 @@ class SafetyChecker:
             uncovered_ratio=coverage.uncovered_ratio,
             passing_ids=passing_fired,
             fired_ids=fired,
-            evidence={**dict(results_by_rule), "_unregistered_fired": list(unregistered_fired) if 'unregistered_fired' in dir() else []},
+            evidence={
+                **dict(results_by_rule),
+                "_unregistered_fired": list(unregistered_fired)
+                if "unregistered_fired" in dir()
+                else [],
+            },
         )
         return verdict

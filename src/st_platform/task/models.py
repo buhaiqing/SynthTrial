@@ -14,8 +14,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import Field, computed_field
+from pydantic import Field, computed_field, field_validator
 
+from st_platform.common.freeze import freeze
 from st_platform.common.types import Versioned, sha256_hex, utcnow
 
 
@@ -75,6 +76,17 @@ class Task(Versioned):
             "seed": self.seed,
             "params": self.params,
         }
+
+    @field_validator("params", mode="after")
+    @classmethod
+    def _deep_freeze_params(cls, v: dict[str, Any]) -> Any:
+        """Freeze the snapshot's mutable parts at construction (D-3).
+
+        ``frozen=True`` on the model only blocks attribute reassignment; it
+        does not stop ``task.params["k"] = 9``, which would silently move
+        content_hash away from the snapshot it claims to describe.
+        """
+        return freeze(v or {})
 
     @computed_field  # type: ignore[prop-decorator]
     @property

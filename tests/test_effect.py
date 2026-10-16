@@ -69,6 +69,7 @@ def test_relative_ci():
 # before_mean, treating a SAMPLE mean as a known constant. That understates
 # uncertainty, and the error explodes as before_mean -> 0 (rare adverse events).
 
+
 def test_naive_ci_would_declare_significance_the_honest_ci_cannot():
     """The false-green this guards against, stated clinically.
 
@@ -133,3 +134,15 @@ def test_relative_lift_ci_matches_delta_method_reference():
     lo, hi = relative_lift_ci95(before, after)
     assert abs(lo - exp_lo) < 1e-9
     assert abs(hi - exp_hi) < 1e-9
+
+
+def test_relative_lift_ci_rejects_single_pair_instead_of_point_interval():
+    """n=1 must raise: a zero-width interval around one observation is false
+    certainty (reproduced: returned (0.4, 0.4))."""
+    with pytest.raises(ValueError):
+        relative_lift_ci95([0.5], [0.7])
+
+
+def test_absolute_lift_ci_rejects_single_pair():
+    with pytest.raises(ValueError):
+        absolute_lift_ci95([0.5], [0.7])

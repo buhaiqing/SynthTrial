@@ -89,13 +89,42 @@ def _validate_inputs(
 
 def paired_t_test(before, after, **kwargs):
     b, a = _validate_inputs(before, after, **kwargs)
-    res = stats.ttest_rel(b, a)
     diff = a - b
     n = b.shape[0]
+
+    # A t statistic needs >=2 pairs and non-zero spread in the differences.
+    # scipy returns nan for both, and a nan rendered into a report reads as
+    # "no result" -- indistinguishable from "no effect". Fail visibly instead.
+    if n < 2:
+        raise ValueError(f"paired t-test needs at least 2 pairs, got n={n}")
+    sd = float(np.std(diff, ddof=1))
+    if sd == 0.0:
+        mean_diff = float(np.mean(diff))
+        if mean_diff == 0.0:
+            # Exact, reportable: the two models produced identical values.
+            return {
+                "test": "paired_t_test",
+                "test_name": "paired_t",
+                "n": int(n),
+                "statistic": 0.0,
+                "pvalue": 1.0,
+                "p_value": 1.0,
+                "p": 1.0,
+                "mean_diff": mean_diff,
+                "ci_low": 0.0,
+                "ci_high": 0.0,
+                "degenerate": "zero_variance_identical",
+            }
+        raise ValueError(
+            "paired t-test undefined: every difference is the same non-zero "
+            f"value ({mean_diff}); variance is 0 so the t statistic divides by zero"
+        )
+
+    res = stats.ttest_rel(b, a)
     mean_diff = float(np.mean(diff))
-    se = float(np.std(diff, ddof=1) / np.sqrt(n)) if n > 1 else float("nan")
+    se = sd / np.sqrt(n)
     # t-based 95% CI on mean difference.
-    tcrit = float(stats.t.ppf(0.975, df=n - 1)) if n > 1 else float("nan")
+    tcrit = float(stats.t.ppf(0.975, df=n - 1))
     ci_low = mean_diff - tcrit * se
     ci_high = mean_diff + tcrit * se
     out = {
@@ -115,9 +144,26 @@ def paired_t_test(before, after, **kwargs):
 
 def wilcoxon_signed_rank(before, after, **kwargs):
     b, a = _validate_inputs(before, after, **kwargs)
-    res = stats.wilcoxon(b, a)
     diff = a - b
     n = b.shape[0]
+    if n < 2:
+        raise ValueError(f"wilcoxon needs at least 2 pairs, got n={n}")
+    if not np.any(diff):
+        # scipy emits a RuntimeWarning ("invalid value in scalar divide") and
+        # still returns p=1.0 here. Handle it explicitly so no warning escapes
+        # and the caller gets an explicit, documented result.
+        return {
+            "test": "wilcoxon_signed_rank",
+            "test_name": "wilcoxon",
+            "n": int(n),
+            "statistic": 0.0,
+            "pvalue": 1.0,
+            "p_value": 1.0,
+            "p": 1.0,
+            "median_diff": 0.0,
+            "degenerate": "all_zero_differences",
+        }
+    res = stats.wilcoxon(b, a)
     out = {
         "test": "wilcoxon_signed_rank",
         "test_name": "wilcoxon",
