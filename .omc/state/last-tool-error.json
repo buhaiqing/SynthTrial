@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"rtk read Makefile; for p in python3 python3.12 python3.13 python3.11; do command -v $p >/dev/null && echo \\\"== $p\\\" && $p -c \\\"import statsmodels;print(statsmodels.__version__)\\\" 2>&1|tail...",
+  "error": "Exit code 1\nPYTHON ?= /usr/local/bin/python3\n.PHONY: test lint run\ntest:\n\tPYTHONPATH=src $(PYTHON) -m pytest -v tests/\nlint:\n\truff check src tests\nrun:\n\tPYTHONPATH=src $(PYTHON) -m st_platform.cli.stctl demo\n== python3\n0.14.6\n== python3.12\n0.14.6\n== python3.13\nModuleNotFoundError: No module named 'statsmodels'",
+  "timestamp": "2026-10-16T21:24:41.459Z",
+  "retry_count": 2
+}

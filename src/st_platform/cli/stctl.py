@@ -5,18 +5,24 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
+from typing import Any
 
 from st_platform.audit.ledger import AuditLedger
-from st_platform.common.types import sha256_hex
-from st_platform.dataset.core import Dataset, DatasetSplit, contamination_detect
+from st_platform.common.types import SafetyVerdictTier, sha256_hex
+from st_platform.dataset.core import Dataset, DatasetSplit, case_signature, contamination_detect
+from st_platform.evaluation.pipeline import EvaluationPipeline
 from st_platform.infer.multicorrect import bonferroni
 from st_platform.infer.paired import mcnemar, paired_t_test
 from st_platform.infer.result import PairedResult
+from st_platform.inference.runner import MockRunner
 from st_platform.registry.metrics import MetricDefinition, MetricKind, MetricRegistry
 from st_platform.report.report import ReportRenderer, ReproducibilityMeta
 from st_platform.safety.checker import SafetyChecker
 from st_platform.safety.rules import DiagnosticRedline
 from st_platform.store import ReportStore
+from st_platform.task.models import TaskState
+from st_platform.task.service import TaskService
 
 
 def _demo_dataset(n: int = 40) -> Dataset:
@@ -82,7 +88,11 @@ def cmd_demo(args: argparse.Namespace) -> int:
     )
 
     ds = _demo_dataset(args.n)
-    contamination = contamination_detect(ds, set())
+    # No real training corpus exists at P0, so the demo synthesizes its own:
+    # the first rows double as "training" rows, which makes the guardrail able to
+    # fire instead of demonstrating a check that can never trip. Deterministic
+    # by construction (case_signature, not hash()).
+    contamination = contamination_detect(ds, {case_signature(r) for r in ds.rows[:3]})
 
     labels = [r["label"] for r in ds.rows]
     before = [_baseline_pred(r) for r in ds.rows]
@@ -217,6 +227,25 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("reports", help="list persisted reports")
     r.add_argument("--store", default=DEFAULT_STORE_DIR, help="report store directory")
     r.add_argument("--json", action="store_true", help="output JSON")
+
+    run_p = sub.add_parser("run", help="run the evaluation pipeline and persist a report")
+    run_p.add_argument(
+        "--dataset", required=True, help="evaluation dataset JSON (see `stctl sample`)"
+    )
+    run_p.add_argument("--model-version", required=True, help="candidate model version")
+    run_p.add_argument("--baseline-version", default="baseline", help="baseline model version")
+    run_p.add_argument("--store", default=DEFAULT_STORE_DIR, help="report store directory")
+    run_p.add_argument("--seed", type=int, default=0)
+    run_p.add_argument("--json", action="store_true", help="output JSON")
+    run_p.add_argument(
+        "--self-test-block",
+        action="store_true",
+        help="register an always-BLOCK redline to prove the gate can fail (operator smoke test)",
+    )
+
+    s_p = sub.add_parser("sample", help="write a deterministic synthetic dataset")
+    s_p.add_argument("--out", default="eval-sample.json", help="output path")
+    s_p.add_argument("--n", type=int, default=30, help="number of rows")
     return p
 
 
@@ -226,8 +255,187 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_demo(args)
     if args.cmd == "reports":
         return cmd_reports(args)
+    if args.cmd == "run":
+        return cmd_run(args)
+    if args.cmd == "sample":
+        return cmd_sample(args)
     return 1
 
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# --------------------------------------------------------------------------
+# stctl run / stctl sample
+#
+# `demo` predates the evaluation pipeline and hand-rolls its statistics, so it
+# never creates a Task and never persists anything (ARCHITECTURE.md G-6).
+# `run` is the real vertical slice: Task -> pipeline -> ReportStore, with the
+# exit code carrying the guardrail verdict so CI can gate on it.
+# --------------------------------------------------------------------------
+
+
+class ContaminationRedline(DiagnosticRedline):
+    """BLOCK when the evaluation set overlaps the training corpus.
+
+    design.md §4.4: "不可见 ≠ 未曝光". A contaminated evaluation set cannot
+    distinguish memorisation from generalisation, so the report is not evidence
+    of anything. Unmeasurable patterns are not claimed to be caught here — this
+    rule only fails on contamination it can actually observe.
+    """
+
+    def evaluate(self, evidence: dict) -> bool:
+        return bool((evidence.get("contamination") or {}).get("contaminated"))
+
+
+class SelfTestBlockRedline(DiagnosticRedline):
+    """Always fires. Registered only by ``--self-test-block``.
+
+    A gate nobody has watched fail is a gate nobody can trust: a permanently-PASS
+    report is indistinguishable from a broken deployment. This makes the operator
+    see a real BLOCK end-to-end before relying on a PASS.
+    """
+
+    def evaluate(self, evidence: dict) -> bool:
+        return True
+
+
+def _default_metrics() -> list[MetricDefinition]:
+    """Two metrics so the run has >1 test and correction is mandatory.
+
+    design.md §3 M003 F3: with a single metric there is nothing to correct, and
+    a one-metric run would silently skip the multiple-comparison guard.
+    """
+    return [
+        MetricDefinition(
+            metric_id="m.accuracy", name="accuracy", kind=MetricKind.RATE, owner="st-registry"
+        ),
+        MetricDefinition(
+            metric_id="m.score", name="model_score", kind=MetricKind.SCORE, owner="st-registry"
+        ),
+    ]
+
+
+def _load_dataset(path) -> Dataset:
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    return Dataset(
+        dataset_id=raw.get("dataset_id", "dataset"),
+        version=int(raw.get("version", 1)),
+        source=raw.get("source", f"file:{path}"),
+        split=DatasetSplit.EVAL,
+        rows=raw.get("rows", []),
+    )
+
+
+def cmd_sample(args: argparse.Namespace) -> int:
+    """Write a deterministic synthetic evaluation set.
+
+    P0 has no data plane (M11), so `run` needs something to read. The output is
+    byte-identical for a given --n, which is what makes `run` reproducible.
+    """
+    n = int(getattr(args, "n", 30))
+    rows = [
+        {"case_id": f"C{i:04d}", "text": f"合成病例 {i}", "label": i % 2, "age": 30 + i % 40}
+        for i in range(n)
+    ]
+    payload = {"dataset_id": "cards-sample", "version": 1, "rows": rows}
+    out = Path(getattr(args, "out", "eval-sample.json"))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"wrote {n} rows -> {out}")
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """Run the real evaluation pipeline and persist the report.
+
+    Exit code is the promotion gate: 0 only when the guardrail verdict is PASS.
+    WARN is NOT an automatic yes (design.md §4.2 — it needs a human approver),
+    so it exits non-zero rather than pretending the model is promotable.
+    """
+    ds_path = Path(getattr(args, "dataset", "") or "")
+    if not ds_path.exists():
+        print(f"error: dataset not found: {ds_path}", file=sys.stderr)
+        return 2
+    try:
+        dataset = _load_dataset(ds_path)
+    except (OSError, ValueError) as exc:
+        print(f"error: cannot read dataset {ds_path}: {exc}", file=sys.stderr)
+        return 2
+
+    candidate_version = getattr(args, "model_version", "candidate")
+    baseline_version = getattr(args, "baseline_version", "baseline")
+    service = TaskService()
+    store = ReportStore(getattr(args, "store", None) or DEFAULT_STORE_DIR)
+
+    task = service.submit(
+        model_version=candidate_version,
+        dataset=dataset,
+        seed=int(getattr(args, "seed", 0)),
+        params={"baseline_model_version": baseline_version},
+    )
+    task = service.transition(task.task_id, TaskState.RUNNING)
+
+    redlines: list[Any] = [
+        ContaminationRedline(
+            id="rl.contamination",
+            severity=SafetyVerdictTier.BLOCK,
+            description="评测集与训练语料重叠",
+        )
+    ]
+    if getattr(args, "self_test_block", False):
+        redlines.append(
+            SelfTestBlockRedline(
+                id="rl.self_test_block",
+                severity=SafetyVerdictTier.BLOCK,
+                description="--self-test-block: 强制验证护栏可熔断",
+            )
+        )
+
+    try:
+        outcome = EvaluationPipeline().run(
+            task=task,
+            dataset=dataset,
+            baseline_runner=MockRunner(model_version=baseline_version),
+            candidate_runner=MockRunner(model_version=candidate_version),
+            metrics=_default_metrics(),
+            redlines=redlines,
+            store=store,
+            train_signatures=getattr(args, "train_signatures", None),
+        )
+    except Exception as exc:  # noqa: BLE001 -- CLI boundary: any failure is a FAILED task
+        failed = service.transition(task.task_id, TaskState.FAILED)
+        print(f"error: task_id={failed.task_id} state=FAILED", file=sys.stderr)
+        print(f"       {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+    done = service.transition(task.task_id, TaskState.DONE)
+    contamination = outcome.reproducibility.contamination_result or {}
+
+    if getattr(args, "json", False):
+        print(
+            json.dumps(
+                {
+                    "task_id": done.task_id,
+                    "task_state": done.state.value,
+                    "content_hash": outcome.content_hash,
+                    "report_hash": outcome.report_hash,
+                    "verdict": outcome.verdict.tier.value,
+                    "promotable": outcome.promotable,
+                    "accuracy_before": outcome.accuracy_before,
+                    "accuracy_after": outcome.accuracy_after,
+                    "contaminated": bool(contamination.get("contaminated")),
+                    "contamination_overlap": contamination.get("train_overlap_count", 0),
+                    "report": outcome.report_markdown,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        print(outcome.report_markdown)
+        print(f"\ntask_id: {done.task_id}  state: {done.state.value}")
+        print(f"report_hash: {outcome.report_hash}")
+
+    return 0 if outcome.promotable else 1

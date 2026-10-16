@@ -1,0 +1,115 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1792185752204,
+  "projectRoot": "/Users/bohaiqing/test/ai_agent/SynthTrial",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "pyproject.toml",
+          "requirements.txt"
+        ]
+      },
+      {
+        "name": "C/C++",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "Makefile"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "pip",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "make build",
+    "testCommand": "make test",
+    "lintCommand": "ruff check",
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "src",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 6,
+      "lastAccessed": 1792185752174,
+      "keyFiles": [
+        "ARCHITECTURE.md",
+        "RUNBOOK.md",
+        "design.md",
+        "design_go_python.md",
+        "self-review-playbook.md"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1792185752176,
+      "keyFiles": []
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 19,
+      "lastAccessed": 1792185752177,
+      "keyFiles": [
+        "__init__.py",
+        "test_audit.py",
+        "test_cli_reports.py",
+        "test_cli_reproducibility.py",
+        "test_cli_run.py"
+      ]
+    },
+    "tools": {
+      "path": "tools",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1792185752179,
+      "keyFiles": [
+        "gen_dep_graph.py"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/st_platform/cli/stctl.py",
+      "accessCount": 2,
+      "lastAccessed": 1792185860107,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_cli_reproducibility.py",
+      "accessCount": 2,
+      "lastAccessed": 1792185869633,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

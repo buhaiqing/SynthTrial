@@ -5,6 +5,7 @@ Depends only on ReportStore, which is already merged, so this is buildable now.
 
 from __future__ import annotations
 
+import argparse
 import json
 
 from st_platform.cli.stctl import build_parser, cmd_reports
@@ -38,7 +39,7 @@ def _seed(tmp_path):
 
 def test_reports_lists_stored_reports(tmp_path, capsys):
     _seed(tmp_path)
-    rc = cmd_reports(type("A", (), {"store": str(tmp_path), "json": False})())
+    rc = cmd_reports(argparse.Namespace(store=str(tmp_path), json=False))
     out = capsys.readouterr().out
     assert rc == 0
     assert "t_aaa" in out
@@ -48,7 +49,7 @@ def test_reports_lists_stored_reports(tmp_path, capsys):
 
 def test_reports_json_is_parseable_and_complete(tmp_path, capsys):
     _seed(tmp_path)
-    rc = cmd_reports(type("A", (), {"store": str(tmp_path), "json": True})())
+    rc = cmd_reports(argparse.Namespace(store=str(tmp_path), json=True))
     payload = json.loads(capsys.readouterr().out)
     assert rc == 0
     assert len(payload) == 2
@@ -59,7 +60,7 @@ def test_reports_json_is_parseable_and_complete(tmp_path, capsys):
 
 
 def test_reports_on_empty_store_is_not_an_error(tmp_path, capsys):
-    rc = cmd_reports(type("A", (), {"store": str(tmp_path), "json": False})())
+    rc = cmd_reports(argparse.Namespace(store=str(tmp_path), json=False))
     out = capsys.readouterr().out
     assert rc == 0
     assert "no reports" in out.lower()
@@ -67,7 +68,7 @@ def test_reports_on_empty_store_is_not_an_error(tmp_path, capsys):
 
 def test_reports_on_missing_dir_does_not_crash(tmp_path, capsys):
     missing = tmp_path / "nope"
-    rc = cmd_reports(type("A", (), {"store": str(missing), "json": False})())
+    rc = cmd_reports(argparse.Namespace(store=str(missing), json=False))
     assert rc == 0
     assert "no reports" in capsys.readouterr().out.lower()
 
@@ -76,7 +77,7 @@ def test_reports_flags_corrupt_entry_rather_than_hiding_it(tmp_path, capsys):
     _seed(tmp_path)
     bad = tmp_path / "deadbeef.json"
     bad.write_text("{ not json")
-    rc = cmd_reports(type("A", (), {"store": str(tmp_path), "json": True})())
+    rc = cmd_reports(argparse.Namespace(store=str(tmp_path), json=True))
     payload = json.loads(capsys.readouterr().out)
     assert rc == 0
     assert len(payload) == 3, "corrupt entry must be surfaced, not skipped"

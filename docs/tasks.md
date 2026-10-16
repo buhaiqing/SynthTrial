@@ -9,6 +9,8 @@
 > 2. 状态只有四种：`✅ 已完成` / `⬜ 待做` / `⛔ 被阻塞` / `🔧 进行中`。不用百分比。
 > 3. 完成一个 Task 就勾选并补 commit sha —— 没证据的 ✅ 不算完成（NO EVIDENCE = NOT COMPLETE）。
 > 4. 新增 Task 必须挂在某个 Milestone 下；没有归属的 Task 不进本文件。
+5. **验收命令必须真的跑到测试。** `pytest -k <pattern>` 匹配不到任何用例时退出码是 **5**，
+   不是 0 —— 一条永远选不中测试的「验收」等于没有验收（见下方 T-M1-05 / T-M3-08 的返工）。
 
 ---
 
@@ -30,7 +32,7 @@
 | [M11](#m11)生产基建) | Postgres / ClickHouse / Prefect / HTTP API | ⬜ |
 | [M12](#m12)需人拍板) | Q1·Q2·Q4·Q5·Q6 | ⛔ |
 
-**基线：** 154 tests · 4,663 LOC · 33 modules · 0 TODO markers · `origin/main` = `9aaa008`
+**基线：** 173 tests · 30 import edges · 0 TODO markers · 依赖图 `--check` 与代码一致
 
 ---
 
@@ -59,7 +61,7 @@
 | T-M1-02 | 指标注册表（版本递增、只追加历史） | `pytest -q tests/test_registry.py` | 5 passed |
 | T-M1-03 | 哈希链式审计台账 | `pytest -q tests/test_audit.py` | 3 passed |
 | T-M1-04 | 数据集模型 + 污染检测 | `pytest -q tests/test_dataset.py` | 4 passed |
-| T-M1-05 | **深冻结 params**（阻断 content_hash 漂移） | `pytest -q tests/test_task.py -k freeze` | `12ed565` |
+| T-M1-05 | **深冻结 params**（阻断 content_hash 漂移） | `pytest -q tests/test_task.py -k nested_mutation` | `12ed565` |
 
 ---
 
@@ -90,7 +92,7 @@
 | T-M3-05 | 多重校正 Bonferroni/Holm/BH | `pytest -q tests/test_multicorrect.py` | — |
 | T-M3-06 | McNemar Yates 校正 + 全一致显式处理 | `grep -n "continuity" src/st_platform/infer/paired.py` | `698881f` |
 | T-M3-07 | CUPED 泄漏护栏（协变量不得等于处理后指标） | `pytest -q tests/test_cuped.py -k covariate` | `698881f` |
-| T-M3-08 | 退化输入不得产出 NaN | `pytest -q tests/test_paired.py -k degenerate` | `12ed565` |
+| T-M3-08 | 退化输入不得产出 NaN | `pytest -q tests/test_paired.py -k "single_pair or zero_variance"` | `12ed565` |
 
 > T-M3-03 的临床判据：naive CI 在 rate-0.15 fixture 上给出 `[+0.28, +3.05]`（不含 0，读作"显著提升"），
 > 而 honest CI 为 `[-0.95, +4.28]`（跨 0，无法排除无效）。守卫断言的是这个临床性质，不是宽度比。
@@ -137,8 +139,8 @@
 | T-M6-04 | case_id 不对齐即拒绝 | `pytest -q tests/test_evaluation_pipeline.py -k case` | — |
 | T-M6-05 | 相同输入产出相同 report_hash | `pytest -q tests/test_evaluation_pipeline.py -k hash` | — |
 
-> **⚠️ 缺口：无任何调用方。** `grep -rn "EvaluationPipeline" src/st_platform/cli/` → 无。
-> 管线能力已测试但未上任何端到端路径 → 见 M7。
+> ✅ **已有调用方**：`stctl run`（T-M7-01）。原先 `grep -rn "EvaluationPipeline" src/st_platform/cli/`
+> 为空，管线能力已测试却未上任何端到端路径 —— 该缺口已关闭。
 
 ---
 
@@ -150,12 +152,12 @@
 
 | ID | Task | 验收 | 阻塞于 | 状态 |
 |---|---|---|---|---|
-| T-M7-01 | **`stctl run` 接上 `EvaluationPipeline`** | `PYTHONPATH=src python3 -m st_platform.cli.stctl run --dataset d --model m` 产出报告并落盘 | — | 🔧 |
+| T-M7-01 | **`stctl run` 接上 `EvaluationPipeline`** | `pytest -q tests/test_cli_run.py` → 13 passed | — | ✅ |
 | T-M7-02 | 报告接入**真实 CI**（替换 `ci_low=0.0/ci_high=1.0`） | `grep -c "ci_low=0.0" src/st_platform/cli/stctl.py` → 0 | — | ⬜ |
 | T-M7-03 | demo 路径也强制多重校正 | `grep -n "assert_correction_applied" src/st_platform/cli/stctl.py` | — | ⬜ |
-| T-M7-04 | 失败路径转 `FAILED` | `pytest -q tests/test_cli_run.py -k failure` | T-M7-01 | ⬜ |
-| T-M7-05 | 端到端落盘后可 `stctl reports` 列出 | `stctl run … && stctl reports` 可见新条目 | T-M7-01 | ⬜ |
-| T-M7-06 | demo 的污染检测不再恒为空集 | `grep -n "contamination_detect(ds, set())" src/st_platform/cli/stctl.py` → 无 | — | ⬜ |
+| T-M7-04 | 失败路径转 `FAILED` | `pytest -q tests/test_cli_run.py -k failed` | T-M7-01 | ✅ |
+| T-M7-05 | 端到端落盘后可 `stctl reports` 列出 | `pytest -q tests/test_cli_run.py -k listable` | T-M7-01 | ✅ |
+| T-M7-06 | demo 的污染检测不再恒为空集（**run 路径已做；demo 路径仍为空集**） | `grep -c "contamination_detect(ds, set())" src/st_platform/cli/stctl.py` → 0（当前 1） | — | 🔧 |
 | T-M7-07 | `contamination_result` 纳入必填可复现要素 | `pytest -q tests/test_report.py -k contamination` | **需用户确认破坏性变更** | ⛔ |
 | T-M7-08 | 修 `ARCHITECTURE.md:41` cli→store 漂移 | `grep -n "not.*task.*,.*store" docs/ARCHITECTURE.md` → 无 | — | ⬜ |
 | T-M7-09 | 修 design §11.1 自相矛盾（"st-bucket 一次都不出现"但图中出现 4 次） | 人工复核该段 | — | ⬜ |
@@ -166,6 +168,38 @@ design.md §4.1 要求它属于五要素，但实现只校验 5 项中的 4 项 
 不是我擅自能定的 → 已标 ⛔。
 
 ---
+
+<a id="m8"></a>
+
+## M8 · 文档与依赖图 ✅
+
+> 这一节此前缺失：进度总览里有 M8 的链接，正文却没有 M8 小节 —— 典型的「索引承诺了正文没有」。
+
+| ID | Task | 验收 | 证据 |
+|---|---|---|---|
+| T-M8-01 | 组件关系图 ×4（mermaid）：组件分期 / 端到端时序 / 状态机 / 包依赖 | 见下方校验 | `ee04aec` |
+| T-M8-02 | **依赖图改为生成**，不再手绘 | `python3 tools/gen_dep_graph.py --check` | `9aaa008` |
+| T-M8-03 | RUNBOOK（运维：安装、复现、事故处置、Do NOT） | `wc -l docs/RUNBOOK.md` | 380 行 |
+| T-M8-04 | ARCHITECTURE（不变量 + 每条在代码何处强制） | `wc -l docs/ARCHITECTURE.md` | 154 行 |
+| T-M8-05 | self-review-playbook（防复发，症状/根因/修法/边界） | `grep -c "^\| [0-9]" docs/self-review-playbook.md` | 12 行 |
+| T-M8-06 | 中英双语 README + MIT | `head -1 LICENSE \| grep -q MIT` | `eadf5a7` |
+| T-M8-07 | 本文件：M0–M12 任务跟踪 | `grep -c "^\| T-" docs/tasks.md` | 71 条 |
+
+**T-M8-02 的由来：** 初版依赖图标注「由 src/ 的 import 生成」，实际是手绘的 —— 其中
+`CLI --> TASK` 是凭记忆画出的边，代码里并不存在（Critic-DesignDiagrams 判为 BLOCKER）。
+改为脚本生成后，`--check` 会在图与真实 import 不一致时 exit 1。**同一道闸后来真的抓到了一次**：
+评测管线合并 + T-M7-01 接线新增了 3 条真实边（CLI→EVALUATION / INFERENCE / TASK），
+其中 `CLI --> TASK` 恰好从「虚构」变成了「真实」。
+
+### mermaid 校验
+```bash
+python3 - <<'EOF'
+import re, pathlib
+for i, b in enumerate(re.findall(r'```mermaid\n(.*?)```', pathlib.Path('docs/design.md').read_text(), re.S), 1):
+    pathlib.Path(f'/tmp/mmd/d{i}.mmd').write_text(b)
+EOF
+cd /tmp/mmd && node validate.mjs   # mermaid v11 parser，4/4 OK
+```
 
 <a id="m9"></a>
 

@@ -47,6 +47,20 @@ def test_demo_full_report_is_identical_across_hash_seeds():
     assert a["report"] == b["report"], "full report text differed across hash seeds"
 
 
+def test_demo_contamination_check_is_not_vacuous():
+    """T-M7-06: the demo must actually exercise contamination detection.
+
+    With an empty train-signature set the check is structurally incapable of
+    firing, so a BLOCK-capable demo proved nothing. Guardrail-before-effect
+    (AGENTS.md 3.3) means showing the guardrail trip is the demo's job.
+    """
+    payload = _run_demo("0")
+    out = payload["report"]
+    assert "train_overlap_count=3" in out, f"contamination check is vacuous:\n{out}"
+    assert "contaminated=True" in out, f"demo must demonstrate the BLOCK path:\n{out}"
+    assert payload["verdict"] == "BLOCK", "contaminated demo data must not report PASS"
+
+
 def test_candidate_is_not_worse_than_baseline():
     """The demo must exercise the paired test with an actual improvement."""
     out = _run_demo("0")["report"]

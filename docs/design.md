@@ -414,11 +414,14 @@ flowchart LR
     N_CLI --> N_AUDIT
     N_CLI --> N_COMMON
     N_CLI --> N_DATASET
+    N_CLI --> N_EVALUATION
     N_CLI --> N_INFER
+    N_CLI --> N_INFERENCE
     N_CLI --> N_REGISTRY
     N_CLI --> N_REPORT
     N_CLI --> N_SAFETY
     N_CLI --> N_STORE
+    N_CLI --> N_TASK
     N_DATASET --> N_COMMON
     N_EVALUATION --> N_COMMON
     N_EVALUATION --> N_DATASET
