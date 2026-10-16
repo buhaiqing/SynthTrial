@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -56,8 +57,12 @@ def test_demo_contamination_check_is_not_vacuous():
     """
     payload = _run_demo("0")
     out = payload["report"]
-    assert "train_overlap_count=3" in out, f"contamination check is vacuous:\n{out}"
-    assert "contaminated=True" in out, f"demo must demonstrate the BLOCK path:\n{out}"
+    # \b, not a plain substring: "train_overlap_count=3" is a prefix of
+    # "train_overlap_count=37", so an `in` check passes on the wrong count.
+    # Mutation-verified (playbook row 4 / D-11): widening the demo's signature
+    # set from rows[:3] to rows[3:] must fail here.
+    assert re.search(r"train_overlap_count=3\b", out), f"contamination check is vacuous:\n{out}"
+    assert re.search(r"contaminated=True\b", out), f"demo must demonstrate the BLOCK path:\n{out}"
     assert payload["verdict"] == "BLOCK", "contaminated demo data must not report PASS"
 
 
