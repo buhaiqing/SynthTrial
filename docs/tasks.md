@@ -27,7 +27,7 @@
 | [M6](#m6)评测管线) | evaluation（P0 纵向切片） | ✅ |
 | [M7](#m7)端到端接线--正确性收口) | **接线 + 4 项正确性缺口** | ✅ |
 | [M8](#m8)文档与依赖图) | mermaid 图 / RUNBOOK / ARCHITECTURE / playbook | ✅ |
-| [M9](#m9)p1-上线放量) | st-bucket / st-lab | 🔧 |
+| [M9](#m9)p1-上线放量) | st-bucket / st-lab | ✅ |
 | [M10](#m10)p2-因果推断) | st-causal | ⬜ |
 | [M11](#m11)生产基建) | Postgres / ClickHouse / Prefect / HTTP API | ⬜ |
 | [M12](#m12)需人拍板) | Q1·Q2·Q4·Q5·Q6 | ⛔ |
@@ -240,7 +240,7 @@ cd /tmp/mmd && node validate.mjs   # mermaid v11 parser，4/4 OK
 
 <a id="m9"></a>
 
-## M9 · P1 上线放量 ⬜
+## M9 · P1 上线放量 ✅
 
 > 触发条件：P0 阶段 0–2 交付且业务方确认需要在线验证。
 
@@ -251,7 +251,7 @@ cd /tmp/mmd && node validate.mjs   # mermaid v11 parser，4/4 OK
 | T-M9-03 | 灰度放量 10%→50%→100% | 调整生效 < 1s | T-M9-01 | ✅ |
 | T-M9-04 | **Assignment / Exposure 分离**（design §4.3，P1 最高优先级） | 端到端对账暴露"有 A 无 E"比例 | T-M9-01 | ✅ |
 | T-M9-05 | `st-lab` 任务编排与配额 | — | T-M7-01 | ✅ |
-| T-M9-06 | 正交/多层实验架构 | — | P2 决策 |
+| T-M9-06 | 正交/多层实验架构 | — | P2 决策 | ✅ |
 
 ---
 
