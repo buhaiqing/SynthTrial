@@ -1,0 +1,95 @@
+"""EvaluationOutcome: the frozen artifact of one offline evaluation (P0 vertical slice).
+
+Guardrail and effectiveness never merge into a single score (design §4.2): ``verdict``
+carries the safety tier, the paired statistics live in ``results`` / ``accuracy_*``.
+``promotable`` is derived from the guardrail alone.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from pydantic import Field, model_validator
+
+from st_platform.common.types import SafetyVerdictTier, Versioned
+from st_platform.infer.result import PairedResult
+from st_platform.report.report import ReproducibilityMeta
+
+
+class GuardrailVerdict(Versioned):
+    """Immutable snapshot of st-safety's ``SafetyVerdict`` inside an outcome.
+
+    ``SafetyVerdict`` is a mutable stdlib dataclass, so holding it directly would let a
+    caller rewrite ``outcome.verdict.tier`` after the fact -- verified: the outer
+    pydantic ``frozen=True`` does not stop a mutation of the object it wraps, so a BLOCK
+    could be flipped to PASS in memory (violates D-3: a finished result is not
+    overwritable). Lists become tuples and evidence is kept as canonical JSON, so no
+    mutable container survives inside the frozen artifact.
+    """
+
+    tier: SafetyVerdictTier
+    blocking_ids: tuple[str, ...] = ()
+    warning_ids: tuple[str, ...] = ()
+    fired_ids: tuple[str, ...] = ()
+    passing_ids: tuple[str, ...] = ()
+    covered_rule_count: int = 0
+    uncovered_rule_count: int = 0
+    uncovered_ratio: float = 0.0
+    #: ``json.dumps`` of the domain verdict's evidence, for a stable, hashable record.
+    evidence_json: str = "{}"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_domain_verdict(cls, data: Any) -> Any:
+        if hasattr(data, "tier"):  # a st_safety.checker.SafetyVerdict
+            return {
+                "tier": data.tier,
+                "blocking_ids": tuple(data.blocking_ids),
+                "warning_ids": tuple(data.warning_ids),
+                "fired_ids": tuple(data.fired_ids),
+                "passing_ids": tuple(data.passing_ids),
+                "covered_rule_count": data.covered_rule_count,
+                "uncovered_rule_count": data.uncovered_rule_count,
+                "uncovered_ratio": data.uncovered_ratio,
+                "evidence_json": json.dumps(data.evidence, sort_keys=True, default=str),
+            }
+        return data
+
+
+class EvaluationOutcome(Versioned):
+    """Frozen result of ``EvaluationPipeline.run``."""
+
+    task_id: str
+    #: Task snapshot hash: identical inputs replay to the same content address.
+    content_hash: str
+    #: ReportStore address of the persisted report payload (same inputs => same hash).
+    report_hash: str
+    #: Guardrail verdict -- kept apart from the effectiveness numbers below.
+    verdict: GuardrailVerdict
+    results: list[PairedResult] = Field(default_factory=list)
+    reproducibility: ReproducibilityMeta
+    accuracy_before: float | None = None
+    accuracy_after: float | None = None
+    report_markdown: str = ""
+
+    @property
+    def promotable(self) -> bool:
+        """``True`` only for a PASS guardrail verdict (design §4.2, AGENTS §7 D-6).
+
+        ``WARN`` is **not** an automatic yes: it means a human approver must decide, so
+        it is not promotable by this pipeline. ``BLOCK`` is a one-vote veto regardless of
+        what the effectiveness numbers say.
+        """
+        return self.verdict.tier == SafetyVerdictTier.PASS
+
+    def effectiveness(self) -> dict[str, Any]:
+        """Effectiveness numbers only -- deliberately excluding the guardrail verdict."""
+        return {
+            "results": [r.model_dump(mode="json") for r in self.results],
+            "accuracy_before": self.accuracy_before,
+            "accuracy_after": self.accuracy_after,
+        }
+
+
+__all__ = ["EvaluationOutcome", "GuardrailVerdict"]
