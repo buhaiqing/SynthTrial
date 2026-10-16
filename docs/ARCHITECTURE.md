@@ -38,7 +38,7 @@ common/            <- the root: imports nothing from st_platform
 | `report` | `report.py` (`ReportRenderer`, `ReproducibilityMeta`) | `common.types`, `safety.coverage` | markdown rendering, reproducibility gate |
 | `task` | `models.py`, `service.py` | `common.types`, `common.freeze`, `dataset.core` (in `service.py`, for the `Dataset` type) | immutable snapshot + lifecycle |
 | `store.py` | `ReportStore` | `common.types` | content-addressed append-only artifact store |
-| `cli` | `stctl.py` | `audit`, `common`, `dataset`, `infer`, `registry`, `report`, `safety` — **not** `task`, `store`, `inference` | the only place that wires multiple domains together |
+| `cli` | `stctl.py` | `audit`, `common`, `dataset`, `infer`, `inference`, `registry`, `report`, `safety`, `store`, `task` | the only place that wires multiple domains together |
 
 **Rules a reviewer can enforce from this table**
 
@@ -49,9 +49,10 @@ common/            <- the root: imports nothing from st_platform
 3. `safety/` and `report/` do **not** import `infer/`. `ReportRenderer` consumes
    duck-typed objects (`getattr(r, "test_name", ...)`), so a new statistic type
    needs no change on the reporting side.
-4. `task/` has no importer outside its own package today (`grep -rn "st_platform.task" src/` → only
-   `task/service.py` and `task/__init__.py`); the CLI does not exercise the lifecycle. If reporting
-   starts to need task state, pass the value in rather than importing `task` from a domain package.
+4. `task/` is imported only by the composition root `cli/` (lifecycle wiring); domain
+   packages must not import `task/`. `grep -rn "st_platform.task" src/` → `cli/stctl.py`,
+   `task/service.py`, `task/__init__.py`. If a domain starts to need task state, pass
+   the value in rather than importing `task` from that domain.
 5. `cli/` is the composition root: if you find yourself importing a domain from
    another domain to make a script work, put the wiring in the CLI instead.
 6. There are no cycles today. If a change seems to need one, the missing thing is a
@@ -78,7 +79,7 @@ copying the CLI's approach.
 
 | # | Invariant | Enforced in (file → symbol) | What breaks it |
 |---|---|---|---|
-| I-1 | **Task immutability + content addressing**: identical inputs replay the same task; snapshots cannot be mutated after construction | `task/models.py` → `Task.snapshot()` (excludes state/lineage/timestamps), `Task.content_hash` (`@computed_field`, derived never stored), `Task._deep_freeze_params` (pydantic validator), `ALLOWED_TRANSITIONS`; `common/freeze.py` → `FrozenDict`; `task/service.py` → `submit()` (replay by hash), `retry()` (mints a new id) | assigning into `task.params` after construction — blocked, not merely discouraged; a hash that is *stored* instead of computed would be able to drift |
+| I-1 | **Task immutability + content addressing**: identical inputs replay the same task; snapshots cannot be mutated after construction | `task/models.py` → `Task.snapshot()` (excludes state/lineage/timestamps), `Task.content_hash` (`@computed_field`, derived never persisted), `Task._deep_freeze_params` (pydantic validator), `ALLOWED_TRANSITIONS`; `common/freeze.py` → `FrozenDict`; `task/service.py` → `submit()` (replay by hash), `retry()` (mints a new id) | assigning into `task.params` after construction — blocked, not merely discouraged; a hash that is *persisted* instead of computed would be able to drift |
 | I-2 | **Guardrail before effect**: a fired BLOCK decides the verdict regardless of statistics; the two are never merged into one score | `safety/checker.py` → `SafetyChecker.check` (blocking ids short-circuit the tier; unknown fired id ⇒ BLOCK, recorded in `evidence['_unregistered_fired']`); `report/report.py` → `render_markdown` emits `## Guardrail verdict` before `## Effectiveness` and never computes a combined score | filing a fired-but-unregistered rule under "passing" (this was the shipped defect, see playbook row 7) |
 | I-3 | **Correction is mandatory when >1 test is run**, and only corrected p-values may drive a conclusion | `infer/result.py` → `assert_correction_applied`; renderer labels the column `p_corrected (authoritative after correction)` and prints raw and corrected side by side | ⚠️ **partially enforced**: nothing calls `assert_correction_applied` outside `tests/test_result.py`; `PairedResult.p_corrected` is `float | None`, so an uncorrected value renders as the literal `None` in the table. Callers must call the guard — see §5 gap G-1 |
 | I-4 | **Append-only store**: an address never changes its bytes; nothing is deleted | `store.py` → `ReportStore.save` raises `StoreConflict` when existing bytes differ; `AuditLedger.verify` walks the hash chain; there is no `delete`/`remove` API for tasks, reports or audit entries (`grep -rn "def delete" src/` → none) | rewriting the file at a content address — refused, and the refusal does not clobber |

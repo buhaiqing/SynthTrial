@@ -153,15 +153,15 @@
 | ID | Task | 验收 | 阻塞于 | 状态 |
 |---|---|---|---|---|
 | T-M7-01 | **`stctl run` 接上 `EvaluationPipeline`** | `pytest -q tests/test_cli_run.py` → 13 passed | — | ✅ |
-| T-M7-02 | 报告接入**真实 CI**（替换 `ci_low=0.0/ci_high=1.0`） | `grep -c "ci_low=0.0" src/st_platform/cli/stctl.py` → 0 | — | ⬜ |
-| T-M7-03 | demo 路径也强制多重校正 | `grep -n "assert_correction_applied" src/st_platform/cli/stctl.py` | — | ⬜ |
+| T-M7-02 | 报告接入**真实 CI**（替换 `ci_low=0.0/ci_high=1.0`） | `grep -c "ci_low=0.0" src/st_platform/cli/stctl.py` → 0 | — | ✅ |
+| T-M7-03 | demo 路径也强制多重校正 | `grep -n "assert_correction_applied" src/st_platform/cli/stctl.py` | — | ✅ |
 | T-M7-04 | 失败路径转 `FAILED` | `pytest -q tests/test_cli_run.py -k failed` | T-M7-01 | ✅ |
 | T-M7-05 | 端到端落盘后可 `stctl reports` 列出 | `pytest -q tests/test_cli_run.py -k listable` | T-M7-01 | ✅ |
-| T-M7-06 | 污染检测不再恒为空集 —— **demo 与 run 两条路径都曾恒为空集** | `grep -c "contamination_detect(ds, set())" src/st_platform/cli/stctl.py` → 0；`pytest -q tests/test_cli_run.py -k contamination` | `4902592` + R2 |
+| T-M7-06 | 污染检测不再恒为空集 —— **demo 与 run 两条路径都曾恒为空集** | `grep -c "contamination_detect(ds, set())" src/st_platform/cli/stctl.py` → 0；`pytest -q tests/test_cli_run.py -k contamination` | `4902592` + R2 | ✅ |
 | T-M7-07 | `contamination_result` 纳入必填可复现要素 | `pytest -q tests/test_report.py -k contamination` | **需用户确认破坏性变更** | ⛔ |
-| T-M7-08 | 修 `ARCHITECTURE.md:41` cli→store 漂移 | `grep -n "not.*task.*,.*store" docs/ARCHITECTURE.md` → 无 | — | ⬜ |
-| T-M7-09 | 修 design §11.1 自相矛盾（"st-bucket 一次都不出现"但图中出现 4 次） | 人工复核该段 | — | ⬜ |
-| T-M7-10 | CI 门禁接入 `gen_dep_graph.py --check` | `.github/workflows/*.yml` 存在该 step | — | ⬜ |
+| T-M7-08 | 修 `ARCHITECTURE.md:41` cli→store 漂移 | `grep -n "not.*task.*,.*store" docs/ARCHITECTURE.md` → 无 | — | ✅ |
+| T-M7-09 | 修 design §11.1 自相矛盾（"st-bucket 一次都不出现"但图中出现 4 次） | 人工复核该段 | — | ✅ |
+| T-M7-10 | CI 门禁接入 `gen_dep_graph.py --check` | `grep -c 'gen_dep_graph' .github/workflows/ci.yml` ≥1 **且** `grep -c '|| true' .github/workflows/ci.yml` → 0 （门禁不能有一步永远为真）| — | ✅ |
 
 **T-M7-07 说明：** 把 `contamination_result` 加入必填会让**现有全部报告失效**（破坏性）。
 design.md §4.1 要求它属于五要素，但实现只校验 5 项中的 4 项 + seed。这是设计与实现的真实分歧，

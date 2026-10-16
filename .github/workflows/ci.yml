@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # No gate step may be made unfailable (see T-M7-10's acceptance command):
+      # a step that cannot fail is decoration, not a gate.
+      # See docs/self-review-playbook.md rows 13-14.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Dependency graph matches the docs
+        run: python tools/gen_dep_graph.py --check
+
+      - name: Tests
+        run: pytest -q
