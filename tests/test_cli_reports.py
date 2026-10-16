@@ -13,14 +13,26 @@ from st_platform.store import ReportStore
 
 def _seed(tmp_path):
     store = ReportStore(tmp_path)
-    store.save({
-        "task_id": "t_aaa", "model_version": "m2", "baseline_model_version": "m1",
-        "verdict": "PASS", "created_at": "2026-01-02", "report": "# Report A",
-    })
-    store.save({
-        "task_id": "t_bbb", "model_version": "m3", "baseline_model_version": "m1",
-        "verdict": "BLOCK", "created_at": "2026-01-01", "report": "# Report B",
-    })
+    store.save(
+        {
+            "task_id": "t_aaa",
+            "model_version": "m2",
+            "baseline_model_version": "m1",
+            "verdict": "PASS",
+            "created_at": "2026-01-02",
+            "report": "# Report A",
+        }
+    )
+    store.save(
+        {
+            "task_id": "t_bbb",
+            "model_version": "m3",
+            "baseline_model_version": "m1",
+            "verdict": "BLOCK",
+            "created_at": "2026-01-01",
+            "report": "# Report B",
+        }
+    )
     return store
 
 

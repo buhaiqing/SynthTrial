@@ -15,7 +15,7 @@
 | `stctl demo` | works, prints a report to stdout | `src/st_platform/cli/stctl.py` → `build_parser` registers exactly one subcommand |
 | Report **persistence** | library only: `ReportStore`; **the CLI does not persist anything** | `cmd_demo` never constructs a store (`grep -n ReportStore src/st_platform/cli/stctl.py` → no match) |
 | Task lifecycle | in-memory `TaskService`; a process exit loses tasks | `src/st_platform/task/service.py` — `TaskService._tasks: dict` |
-| `stctl reports list` (design_go_python.md §5 step 8) | **does not exist**; use the `ReportStore` listing below | `PYTHONPATH=src /usr/local/bin/python3 -m st_platform.cli.stctl --help` → `usage: stctl [-h] {demo} ...` |
+| `stctl reports list` (design_go_python.md §5 step 8) | the nested `list` sub-command does not exist; the command is `stctl reports` (see §2.3) | `PYTHONPATH=src /usr/local/bin/python3 -m st_platform.cli.stctl --help` → `usage: stctl [-h] {demo,reports} ...` |
 | Task lifecycle in the CLI | not wired: `stctl demo` never creates a `Task` | `grep -n "TaskService" src/st_platform/cli/stctl.py` → no match; drive tasks via the library (`ARCHITECTURE.md` G-6) |
 | HTTP API, Prefect, Kafka, ClickHouse, Postgres | not implemented in P0 | no such modules under `src/st_platform/` |
 
