@@ -7,6 +7,7 @@ import json
 import sys
 
 from st_platform.audit.ledger import AuditLedger
+from st_platform.common.types import sha256_hex
 from st_platform.dataset.core import Dataset, DatasetSplit, contamination_detect
 from st_platform.infer.multicorrect import bonferroni
 from st_platform.infer.paired import mcnemar, paired_t_test
@@ -37,10 +38,27 @@ def _demo_dataset(n: int = 40) -> Dataset:
     )
 
 
-def _deterministic_pred(row: dict, bias: int) -> int:
-    base = row["label"]
-    flip = (hash(row["case_id"]) % 100 + bias) % 7 == 0
-    return 1 - base if flip else base
+def _digest(row: dict) -> int:
+    """Stable across processes. Built-in hash() is salted per interpreter run
+    (PYTHONHASHSEED), which silently changed every number in the report."""
+    return int(sha256_hex(row["case_id"])[:8], 16)
+
+
+def _baseline_pred(row: dict) -> int:
+    """Baseline model: correct unless the stable digest says otherwise."""
+    return int(row["label"]) if _digest(row) % 5 else 1 - int(row["label"])
+
+
+def _candidate_pred(row: dict) -> int:
+    """Candidate model: repairs a subset of the baseline's errors.
+
+    Guarantees candidate accuracy >= baseline accuracy, so the demo actually
+    exercises the paired test rather than showing a regression.
+    """
+    base = _baseline_pred(row)
+    if base != int(row["label"]) and _digest(row) % 3 == 0:
+        return int(row["label"])
+    return base
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
@@ -66,8 +84,8 @@ def cmd_demo(args: argparse.Namespace) -> int:
     contamination = contamination_detect(ds, set())
 
     labels = [r["label"] for r in ds.rows]
-    before = [int(_deterministic_pred(r, 0)) for r in ds.rows]
-    after = [int(_deterministic_pred(r, -3)) for r in ds.rows]
+    before = [_baseline_pred(r) for r in ds.rows]
+    after = [_candidate_pred(r) for r in ds.rows]
 
     acc_before = sum(a == b for a, b in zip(before, labels)) / len(labels)
     acc_after = sum(a == b for a, b in zip(after, labels)) / len(labels)
