@@ -12,9 +12,10 @@ from st_platform.audit.ledger import AuditLedger
 from st_platform.common.types import SafetyVerdictTier, sha256_hex
 from st_platform.dataset.core import Dataset, DatasetSplit, case_signature, contamination_detect
 from st_platform.evaluation.pipeline import EvaluationPipeline
+from st_platform.infer import effect
 from st_platform.infer.multicorrect import bonferroni
 from st_platform.infer.paired import mcnemar, paired_t_test
-from st_platform.infer.result import PairedResult
+from st_platform.infer.result import PairedResult, assert_correction_applied
 from st_platform.inference.runner import MockRunner
 from st_platform.registry.metrics import MetricDefinition, MetricKind, MetricRegistry
 from st_platform.report.report import ReportRenderer, ReproducibilityMeta
@@ -101,14 +102,19 @@ def cmd_demo(args: argparse.Namespace) -> int:
     acc_before = sum(a == b for a, b in zip(before, labels)) / len(labels)
     acc_after = sum(a == b for a, b in zip(after, labels)) / len(labels)
 
-    t_res = paired_t_test(
-        [float(a == b) for a, b in zip(before, labels)],
-        [float(a == b) for a, b in zip(after, labels)],
-    )
+    before_correct = [float(a == b) for a, b in zip(before, labels)]
+    after_correct = [float(a == b) for a, b in zip(after, labels)]
+
+    t_res = paired_t_test(before_correct, after_correct)
     mc_res = mcnemar(before, after)
 
     raw_ps = [t_res["p_value"], mc_res["p_value"]]
     corrected = bonferroni(raw_ps)
+
+    acc_ci_low, acc_ci_high = float(t_res["ci_low"]), float(t_res["ci_high"])
+    agree_ci_low, agree_ci_high = effect.absolute_lift_ci95(
+        [float(x) for x in before], [float(x) for x in after]
+    )
 
     results = [
         PairedResult(
@@ -118,8 +124,8 @@ def cmd_demo(args: argparse.Namespace) -> int:
             p_raw=raw_ps[0],
             p_corrected=corrected[0],
             method="paired_t_test",
-            ci_low=0.0,
-            ci_high=1.0,
+            ci_low=acc_ci_low,
+            ci_high=acc_ci_high,
             abs_lift=acc_after - acc_before,
             rel_lift=(acc_after - acc_before) / acc_before if acc_before else 0.0,
             correction_applied="bonferroni",
@@ -131,13 +137,14 @@ def cmd_demo(args: argparse.Namespace) -> int:
             p_raw=raw_ps[1],
             p_corrected=corrected[1],
             method="mcnemar",
-            ci_low=0.0,
-            ci_high=1.0,
+            ci_low=agree_ci_low,
+            ci_high=agree_ci_high,
             abs_lift=acc_after - acc_before,
             rel_lift=0.0,
             correction_applied="bonferroni",
         ),
     ]
+    assert_correction_applied(results)
 
     redlines = [DiagnosticRedline(id="rl.no_missed_critical", severity_level="BLOCK")]
     checker = SafetyChecker(redlines)
