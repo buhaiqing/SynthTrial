@@ -103,7 +103,9 @@ class ReportRenderer:
         acc_after = kwargs.get("accuracy_after", kwargs.get("acc_after"))
 
         # low-kappa subsets
-        kappa_threshold = kwargs.get("kappa_threshold", kwargs.get("low_kappa_threshold", DEFAULT_KAPPA_THRESHOLD))
+        kappa_threshold = kwargs.get(
+            "kappa_threshold", kwargs.get("low_kappa_threshold", DEFAULT_KAPPA_THRESHOLD)
+        )
         low_kappa_subsets = (
             kwargs.get("low_kappa_subsets")
             or kwargs.get("kappa_subsets")
@@ -118,7 +120,7 @@ class ReportRenderer:
 
         # normalize low-kappa subsets
         low_flagged = []
-        for s in (low_kappa_subsets or []):
+        for s in low_kappa_subsets or []:
             name = None
             kappa = None
             if isinstance(s, dict):
@@ -176,7 +178,7 @@ class ReportRenderer:
         lines.append("### Statistical results")
         lines.append("| Test | p_raw | p_corrected (authoritative after correction) |")
         lines.append("|---|---|---|")
-        for r in (results or []):
+        for r in results or []:
             if isinstance(r, dict):
                 name = r.get("test_name", r.get("metric", r.get("name", "")))
                 p_raw = r.get("p_raw", r.get("p_raw", r.get("p_value")))

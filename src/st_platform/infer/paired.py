@@ -15,7 +15,9 @@ def _to_array(x: Any) -> np.ndarray:
     return np.asarray(x, dtype=float)
 
 
-def _extract_case_ids(kwargs: dict[str, Any]) -> tuple[list[Any] | None, list[Any] | None]:
+def _extract_case_ids(
+    kwargs: dict[str, Any],
+) -> tuple[list[Any] | None, list[Any] | None, list[Any] | None]:
     """Collect before/after case-id sequences from optional kwargs.
 
     Accepts a wide variety of keyword names to be forgiving about caller
@@ -26,7 +28,13 @@ def _extract_case_ids(kwargs: dict[str, Any]) -> tuple[list[Any] | None, list[An
     shared: list[Any] | None = None
 
     # Direct name variants.
-    before_names = {"before_case_ids", "case_ids_before", "ids_before", "case_id_before", "before_ids"}
+    before_names = {
+        "before_case_ids",
+        "case_ids_before",
+        "ids_before",
+        "case_id_before",
+        "before_ids",
+    }
     after_names = {"after_case_ids", "case_ids_after", "ids_after", "case_id_after", "after_ids"}
     shared_names = {"case_ids", "case_id", "ids"}
 
@@ -40,7 +48,12 @@ def _extract_case_ids(kwargs: dict[str, Any]) -> tuple[list[Any] | None, list[An
             shared = list(v)
         else:
             # Heuristic: any kwarg with "case" or "id" in name.
-            if ("case" in lk or lk.endswith("_ids") or lk == "ids") and before_ids is None and after_ids is None and shared is None:
+            if (
+                ("case" in lk or lk.endswith("_ids") or lk == "ids")
+                and before_ids is None
+                and after_ids is None
+                and shared is None
+            ):
                 shared = list(v)
     return before_ids, after_ids, shared
 
@@ -55,28 +68,20 @@ def _validate_inputs(
     if b.ndim != 1 or a.ndim != 1:
         raise ValueError("before and after must be 1-D arrays")
     if b.shape[0] != a.shape[0]:
-        raise ValueError(
-            f"length mismatch: before={b.shape[0]} vs after={a.shape[0]}"
-        )
+        raise ValueError(f"length mismatch: before={b.shape[0]} vs after={a.shape[0]}")
 
     before_ids, after_ids, shared = _extract_case_ids(kwargs)
 
     if shared is not None and len(shared) != b.shape[0]:
-            raise ValueError(
-                f"case_ids length {len(shared)} != data length {b.shape[0]}"
-            )
+        raise ValueError(f"case_ids length {len(shared)} != data length {b.shape[0]}")
 
     if before_ids is not None and len(before_ids) != b.shape[0]:
-        raise ValueError(
-            f"before case_ids length {len(before_ids)} != data length {b.shape[0]}"
-        )
+        raise ValueError(f"before case_ids length {len(before_ids)} != data length {b.shape[0]}")
     if after_ids is not None and len(after_ids) != a.shape[0]:
-        raise ValueError(
-            f"after case_ids length {len(after_ids)} != data length {a.shape[0]}"
-        )
+        raise ValueError(f"after case_ids length {len(after_ids)} != data length {a.shape[0]}")
 
     if before_ids is not None and after_ids is not None and before_ids != after_ids:
-            raise ValueError("before and after are not aligned by case_id")
+        raise ValueError("before and after are not aligned by case_id")
 
     # If shared ids given alongside per-side ids, shared must match order.
     if shared is not None and before_ids is not None and shared != before_ids:

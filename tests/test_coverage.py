@@ -25,5 +25,6 @@ def test_recall_over_known_risk_set():
 
 def test_no_forbidden_names():
     import st_platform.safety.coverage as c
+
     assert not hasattr(c, "zero_miss")
     assert not hasattr(c, "perfect_recall")

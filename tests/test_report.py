@@ -37,7 +37,9 @@ def test_validate_complete_ok():
     m.validate_complete()  # no raise
 
 
-@pytest.mark.parametrize("field", ["model_version", "dataset_version", "dataset_sha", "code_version", "seed"])
+@pytest.mark.parametrize(
+    "field", ["model_version", "dataset_version", "dataset_sha", "code_version", "seed"]
+)
 def test_validate_complete_rejects_missing(field):
     m = _meta(**{field: None})
     # seed case: also empty string
@@ -63,6 +65,7 @@ def test_render_markdown_basic():
     checker = SafetyChecker(rules)
     cov = None
     from st_platform.safety.coverage import CoverageReport
+
     cov = CoverageReport(registered=rules, evaluated=rules)
     verdict = checker.check(results_by_rule={"r": False}, coverage=cov)
     results = [FakeResult("t", 0.01, 0.04)]
@@ -101,10 +104,12 @@ def test_render_flags_low_kappa():
 
 def test_render_flags_low_kappa_nested_annotation():
     meta = _meta()
+
     @dataclass
     class S:
         name: str
         annotation: object
+
     s = S(name="subset-x", annotation=type("A", (), {"kappa": 0.2})())
     renderer = ReportRenderer()
     md = renderer.render_markdown(repro=meta, results=[], kappa_subsets=[s], kappa_threshold=0.6)

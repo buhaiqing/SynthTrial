@@ -38,7 +38,9 @@ def test_latest_and_none():
     reg = MetricRegistry()
     assert reg.latest("nope") is None
     reg.register(_metric("candidate"))
-    assert reg.latest("candidate").version == 1
+    latest = reg.latest("candidate")
+    assert latest is not None
+    assert latest.version == 1
 
 
 def test_list_ids_sorted():

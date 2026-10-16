@@ -21,6 +21,7 @@ class ModelRunner(Protocol):
         """Score one dataset row. Must return a JSON-serializable dict."""
         ...
 
+
 class MockRunner:
     """Deterministic stand-in for a real model.
 
@@ -38,8 +39,10 @@ class MockRunner:
 
     def predict(self, row: dict) -> dict:
         case_id = str(row.get("case_id", row.get("id", "")))
-        seed_src = f"{self.model_version}|{case_id}" if case_id else json.dumps(
-            row, sort_keys=True, default=str
+        seed_src = (
+            f"{self.model_version}|{case_id}"
+            if case_id
+            else json.dumps(row, sort_keys=True, default=str)
         )
         score = round(random.Random(int(sha256_hex(seed_src)[:16], 16)).random(), 6)
         return {

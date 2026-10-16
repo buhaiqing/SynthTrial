@@ -20,8 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def make_dataset(rows: list[dict]) -> Dataset:
-    return Dataset(dataset_id="cards-1.0", version=1, source="hospital-A",
-                   split=DatasetSplit.EVAL, rows=rows)
+    return Dataset(
+        dataset_id="cards-1.0", version=1, source="hospital-A", split=DatasetSplit.EVAL, rows=rows
+    )
 
 
 # ---------------------------------------------------------------- determinism

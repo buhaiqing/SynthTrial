@@ -41,7 +41,7 @@ class RedlineSet:
 
     def __init__(self, rules: Iterable[RedlineRule] | None = None) -> None:
         self._rules = []
-        for r in (rules or []):
+        for r in rules or []:
             self.add(r)
 
     def add(self, rule: RedlineRule) -> None:
@@ -97,7 +97,11 @@ def _make_redline(cls_name: str):
                         severity = kwargs.pop(key)
                         break
             if severity is None:
-                severity = SafetyVerdictTier.BLOCK if cls_name == "ComplianceRedline" else SafetyVerdictTier.WARN
+                severity = (
+                    SafetyVerdictTier.BLOCK
+                    if cls_name == "ComplianceRedline"
+                    else SafetyVerdictTier.WARN
+                )
             self.id = id
             self.severity = _coerce_tier(severity)
             self.description = description or kwargs.pop("desc", "") or ""

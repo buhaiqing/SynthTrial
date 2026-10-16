@@ -1,5 +1,7 @@
 """Tests for paired statistics."""
 
+import math
+
 import pytest
 from scipy import stats
 
@@ -82,15 +84,15 @@ def test_mcnemar_length_mismatch_raises():
 
 def test_mcnemar_case_id_mismatch_raises():
     with pytest.raises(ValueError):
-        mcnemar([0, 1, 0], [1, 0, 1], before_case_ids=["a", "b", "c"], after_case_ids=["a", "b", "d"])
+        mcnemar(
+            [0, 1, 0], [1, 0, 1], before_case_ids=["a", "b", "c"], after_case_ids=["a", "b", "d"]
+        )
 
 
 # --- Degenerate inputs must fail loud, never NaN (Critic-Infer BLOCKER, reproduced) ---
 # Repro before fix: n=1 -> statistic/pvalue/p/ci_low/ci_high ALL nan;
 # zero-variance identical arrays -> all nan. A nan propagating into a report
 # renders as "None" or silence -- the exact false-green class design.md forbids.
-
-from st_platform.infer.paired import paired_t_test, wilcoxon_signed_rank
 
 
 def test_paired_t_rejects_single_pair():
@@ -103,7 +105,7 @@ def test_paired_t_zero_variance_identical_arrays_returns_exact_no_difference():
     assert r["p_value"] == 1.0
     assert r["statistic"] == 0.0
     assert r["ci_low"] == r["ci_high"] == 0.0
-    assert not any(isinstance(v, float) and v != v for v in r.values())  # no NaN
+    assert not any(isinstance(v, float) and math.isnan(v) for v in r.values())  # no NaN
 
 
 def test_paired_t_zero_variance_nonzero_mean_raises_rather_than_nan():

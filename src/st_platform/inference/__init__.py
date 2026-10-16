@@ -11,4 +11,13 @@ from st_platform.inference.runner import (
     run_batch,
 )
 
-__all__ = ["REGISTRY", "RUNNERS", "RUNNER_REGISTRY", "MockRunner", "ModelRunner", "list_runners", "run", "run_batch"]
+__all__ = [
+    "REGISTRY",
+    "RUNNERS",
+    "RUNNER_REGISTRY",
+    "MockRunner",
+    "ModelRunner",
+    "list_runners",
+    "run",
+    "run_batch",
+]

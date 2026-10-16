@@ -69,7 +69,7 @@ def test_content_hash_changes_when_any_snapshot_field_changes():
 
 def test_params_are_copied_from_caller():
     """Caller mutating its own dict must not change the frozen snapshot."""
-    params = {"t": 0.7}
+    params: dict[str, object] = {"t": 0.7}
     task = TaskService().submit(model_version="v2", dataset=make_dataset(), params=params)
     before = task.content_hash
     params["t"] = 0.1
@@ -115,8 +115,15 @@ def test_content_hash_stable_across_processes_and_hash_seeds():
 
 
 def _bare(task_id: str, params: dict[str, Any]) -> Task:
-    return Task(task_id=task_id, model_version="v2", dataset_id="d", dataset_version=1,
-                dataset_sha="s", seed=7, params=params)
+    return Task(
+        task_id=task_id,
+        model_version="v2",
+        dataset_id="d",
+        dataset_version=1,
+        dataset_sha="s",
+        seed=7,
+        params=params,
+    )
 
 
 def test_content_hash_independent_of_param_key_order():
@@ -143,8 +150,14 @@ def test_task_model_is_frozen():
 
 
 def test_illegal_transition_raises_task_state_error():
-    task = Task(task_id="t_x", state=TaskState.DRAFT, model_version="v2",
-                dataset_id="d", dataset_version=1, dataset_sha="s")
+    task = Task(
+        task_id="t_x",
+        state=TaskState.DRAFT,
+        model_version="v2",
+        dataset_id="d",
+        dataset_version=1,
+        dataset_sha="s",
+    )
     with pytest.raises(TaskStateError):
         task.transition_to(TaskState.RUNNING)
 
@@ -162,15 +175,27 @@ def test_legal_happy_path_transitions():
 
 def test_failed_task_cannot_be_restarted_in_place():
     """AGENTS D-3: retry creates a NEW task; in-place restart is illegal."""
-    task = Task(task_id="t_x", state=TaskState.FAILED, model_version="v2",
-                dataset_id="d", dataset_version=1, dataset_sha="s")
+    task = Task(
+        task_id="t_x",
+        state=TaskState.FAILED,
+        model_version="v2",
+        dataset_id="d",
+        dataset_version=1,
+        dataset_sha="s",
+    )
     with pytest.raises(TaskStateError):
         task.transition_to(TaskState.RUNNING)
 
 
 def test_obsoleted_is_terminal():
-    task = Task(task_id="t_x", state=TaskState.OBSOLETED, model_version="v2",
-                dataset_id="d", dataset_version=1, dataset_sha="s")
+    task = Task(
+        task_id="t_x",
+        state=TaskState.OBSOLETED,
+        model_version="v2",
+        dataset_id="d",
+        dataset_version=1,
+        dataset_sha="s",
+    )
     with pytest.raises(TaskStateError):
         task.transition_to(TaskState.SUBMITTED)
 
@@ -239,10 +264,15 @@ def test_list_all_returns_insertion_order_snapshot():
 # 74b86887061c -> a2e16483b764; retry() shallow-copied params so mutating the
 # retry's list corrupted the parent ([1,2] -> [1,2,3]). Violates D-3.
 
+
 def test_task_params_nested_mutation_forbidden_and_hash_stable():
     svc = TaskService()
-    t = svc.submit(model_version="m1", dataset=make_dataset(), seed=42,
-                   params={"nested": {"k": 1}, "items": [1, 2]})
+    t = svc.submit(
+        model_version="m1",
+        dataset=make_dataset(),
+        seed=42,
+        params={"nested": {"k": 1}, "items": [1, 2]},
+    )
     h = t.content_hash
     with pytest.raises((TypeError, AttributeError)):
         t.params["nested"] = {"k": 2}
