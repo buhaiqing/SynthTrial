@@ -157,7 +157,7 @@
 | T-M7-03 | demo 路径也强制多重校正 | `grep -n "assert_correction_applied" src/st_platform/cli/stctl.py` | — | ⬜ |
 | T-M7-04 | 失败路径转 `FAILED` | `pytest -q tests/test_cli_run.py -k failed` | T-M7-01 | ✅ |
 | T-M7-05 | 端到端落盘后可 `stctl reports` 列出 | `pytest -q tests/test_cli_run.py -k listable` | T-M7-01 | ✅ |
-| T-M7-06 | demo 的污染检测不再恒为空集（**run 路径已做；demo 路径仍为空集**） | `grep -c "contamination_detect(ds, set())" src/st_platform/cli/stctl.py` → 0（当前 1） | — | 🔧 |
+| T-M7-06 | demo 的污染检测不再恒为空集（run 路径已做；demo 路径从 eval 行合成 train 签名，verdict 转 BLOCK） | `grep -c "contamination_detect(ds, set())" src/st_platform/cli/stctl.py` → 0 | — | ✅ |
 | T-M7-07 | `contamination_result` 纳入必填可复现要素 | `pytest -q tests/test_report.py -k contamination` | **需用户确认破坏性变更** | ⛔ |
 | T-M7-08 | 修 `ARCHITECTURE.md:41` cli→store 漂移 | `grep -n "not.*task.*,.*store" docs/ARCHITECTURE.md` → 无 | — | ⬜ |
 | T-M7-09 | 修 design §11.1 自相矛盾（"st-bucket 一次都不出现"但图中出现 4 次） | 人工复核该段 | — | ⬜ |

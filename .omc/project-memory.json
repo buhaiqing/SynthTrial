@@ -109,6 +109,12 @@
       "accessCount": 2,
       "lastAccessed": 1792185869633,
       "type": "file"
+    },
+    {
+      "path": "docs/tasks.md",
+      "accessCount": 1,
+      "lastAccessed": 1792185976285,
+      "type": "file"
     }
   ],
   "userDirectives": []
