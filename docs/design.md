@@ -397,6 +397,7 @@ stateDiagram-v2
 
 ```mermaid
 flowchart LR
+    N_API["api"]
     N_AUDIT["audit/"]
     N_CLI["cli/stctl.py"]
     N_COMMON["common/"]
@@ -411,6 +412,10 @@ flowchart LR
     N_TASK["task/"]
     N_VERSION["version"]
 
+    N_API --> N_CLI
+    N_API --> N_DATASET
+    N_API --> N_STORE
+    N_API --> N_TASK
     N_CLI --> N_AUDIT
     N_CLI --> N_COMMON
     N_CLI --> N_DATASET

@@ -282,9 +282,9 @@ cd /tmp/mmd && node validate.mjs   # mermaid v11 parser，4/4 OK
 | T-M11-01 | Postgres 替换内存 TaskService（契约不变） | 重启后任务可恢复 | ⬜ |
 | T-M11-02 | ClickHouse 接 TB 级扫描 | 分区策略 + 并行度基准 | ⬜ |
 | T-M11-03 | Prefect/Dagster 编排 | 失败可重试、可视化 | ⬜ |
-| T-M11-04 | HTTP API（FastAPI） | — | ⬜ |
-| T-M11-05 | PHI 脱敏钩子（D-4：永不离脱敏链） | 持久化/传输层均有钩子 | ⬜ |
-| T-M11-06 | 鉴权与租户隔离（Entra ID + RBAC） | — | ⬜ |
+| T-M11-04 | HTTP API（FastAPI） | `pytest -q tests/test_api.py` | ✅ |
+| T-M11-05 | PHI 脱敏钩子（D-4：永不离脱敏链） | `pytest -q tests/test_api.py -k phi` | ✅ |
+| T-M11-06 | 鉴权与租户隔离（Entra ID + RBAC） | `pytest -q tests/test_api.py` | ✅ |
 
 ---
 
