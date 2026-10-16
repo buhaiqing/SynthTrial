@@ -122,7 +122,7 @@ Q3 已解。**Q4/Q5 未解前，M006 护栏的验收标准无法定稿** —— 
 
 | # | 纪律 | 具体 | Why（根因来源） |
 |---|---|---|---|
-| D-1 | Subagent 模型一致性 | 所有 subagent 与主 Agent 用 **`opencode-go/deepseek-v4.1-flash`**，无例外；配额耗尽走 fallback 唯一目标同其 | 用户裁定 2026-10-14；model-fallback.ts 强制 whitelist |
+| D-1 | Subagent 模型一致性 | 默认所有 subagent 用 **`opencode-go/deepseek-v4.1-flash`**。该模型 402 欠费期间，**只读评审类 subagent 改用 `minimax-cn/MiniMax-M3`**（用户 2026-10-17 授权）；Generator 仍用主模型。派发前用 models-store 核实 id 存在 | 用户裁定 2026-10-14 + 2026-10-17；`model-fallback.ts` 的 `ALLOWED_TARGETS` 当前仍只白名单那个 402 的模型 |
 | D-2 | Spec/Plan 先于 Code | 功能性开发必须先落 `docs/superpowers/specs/` + `docs/superpowers/plans/`，无例外（<5 行 typo 除外） | §Spec+Plan First 铁律 |
 | D-3 | 数据不可变 | 提交后的评测任务（标本 + 参数 + 代码版本）冻结为快照，重试产生新任务；已完结结果不可覆盖 | §4.1 可复现性铁律 |
 | D-4 | 医疗数据永不离脱敏链 | 任何持久化/传输层必须有 service token + column-level 脱敏钩子；未脱敏数据不得写入日志 | NFR security_compliance + 医疗伦理 |

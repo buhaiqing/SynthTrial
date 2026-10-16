@@ -262,10 +262,6 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
-if __name__ == "__main__":
-    sys.exit(main())
-
-
 # --------------------------------------------------------------------------
 # stctl run / stctl sample
 #
@@ -439,3 +435,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"report_hash: {outcome.report_hash}")
 
     return 0 if outcome.promotable else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

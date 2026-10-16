@@ -13,11 +13,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from st_platform.cli.stctl import build_parser, cmd_reports, cmd_run, cmd_sample
 from st_platform.dataset.core import case_signature
 from st_platform.store import ReportStore
+
+REPO = Path(__file__).resolve().parents[1]
 
 
 def _write_dataset(tmp_path: Path, n: int = 30) -> Path:
@@ -197,3 +202,57 @@ def test_parser_exposes_run_and_sample():
     assert r.cmd == "run" and r.dataset == "d.json" and r.model_version == "v2"
     s = p.parse_args(["sample", "--n", "5"])
     assert s.cmd == "sample" and s.n == 5
+
+
+# ---------------------------------------------------------------- script entry point
+
+
+def _as_script(*argv: str) -> subprocess.CompletedProcess:
+    """Invoke stctl as `python -m ...`, not by importing its symbols.
+
+    Importing cmd_run/cmd_sample loads the whole module first, so it cannot catch
+    a definition that sits AFTER the `if __name__ == "__main__"` block -- which
+    is exactly the bug that shipped 13 green tests alongside a CLI that died with
+    NameError. The `python -m` path is the one users actually take.
+    """
+    env = dict(os.environ, PYTHONPATH="src")
+    return subprocess.run(
+        [sys.executable, "-m", "st_platform.cli.stctl", *argv],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+        # explicit: these tests assert on returncode themselves, including the
+        # non-zero paths (a BLOCK verdict must be observable, not raised here).
+        check=False,
+    )
+
+
+def test_sample_runs_as_a_script(tmp_path):
+    proc = _as_script("sample", "--out", str(tmp_path / "s.json"), "--n", "6")
+    assert proc.returncode == 0, proc.stderr
+    assert (tmp_path / "s.json").exists()
+
+
+def test_run_runs_as_a_script(tmp_path):
+    ds = _write_dataset(tmp_path)
+    proc = _as_script(
+        "run",
+        "--dataset",
+        str(ds),
+        "--model-version",
+        "v2",
+        "--store",
+        str(tmp_path / "store"),
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "report_hash:" in proc.stdout
+    assert "state: DONE" in proc.stdout
+
+
+def test_every_subcommand_is_reachable_from_the_entry_point():
+    """No command may be defined after the __main__ block."""
+    proc = _as_script("--help")
+    assert proc.returncode == 0, proc.stderr
+    for cmd in ("demo", "reports", "run", "sample"):
+        assert cmd in proc.stdout, f"{cmd} not reachable from the CLI entry point"
