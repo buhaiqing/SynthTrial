@@ -39,21 +39,36 @@ class GuardrailVerdict(Versioned):
     #: ``json.dumps`` of the domain verdict's evidence, for a stable, hashable record.
     evidence_json: str = "{}"
 
+    @staticmethod
+    def _domain_verdict_fields(v: Any) -> dict[str, Any]:
+        """Field mapping for a mutable ``st_safety.checker.SafetyVerdict``."""
+        return {
+            "tier": v.tier,
+            "blocking_ids": tuple(v.blocking_ids),
+            "warning_ids": tuple(v.warning_ids),
+            "fired_ids": tuple(v.fired_ids),
+            "passing_ids": tuple(v.passing_ids),
+            "covered_rule_count": v.covered_rule_count,
+            "uncovered_rule_count": v.uncovered_rule_count,
+            "uncovered_ratio": v.uncovered_ratio,
+            "evidence_json": json.dumps(v.evidence, sort_keys=True, default=str),
+        }
+
+    @classmethod
+    def from_domain_verdict(cls, verdict: Any) -> GuardrailVerdict:
+        """Snapshot a domain verdict into the frozen artifact (D-3).
+
+        Named so the call site states this step. Relying on pydantic's implicit
+        ``before`` validator hid the immutability conversion from readers and hid the
+        ``SafetyVerdict`` -> ``GuardrailVerdict`` assignment from the type checker.
+        """
+        return cls.model_validate(cls._domain_verdict_fields(verdict))
+
     @model_validator(mode="before")
     @classmethod
-    def _from_domain_verdict(cls, data: Any) -> Any:
+    def _coerce_domain_verdict(cls, data: Any) -> Any:
         if hasattr(data, "tier"):  # a st_safety.checker.SafetyVerdict
-            return {
-                "tier": data.tier,
-                "blocking_ids": tuple(data.blocking_ids),
-                "warning_ids": tuple(data.warning_ids),
-                "fired_ids": tuple(data.fired_ids),
-                "passing_ids": tuple(data.passing_ids),
-                "covered_rule_count": data.covered_rule_count,
-                "uncovered_rule_count": data.uncovered_rule_count,
-                "uncovered_ratio": data.uncovered_ratio,
-                "evidence_json": json.dumps(data.evidence, sort_keys=True, default=str),
-            }
+            return cls._domain_verdict_fields(data)
         return data
 
 

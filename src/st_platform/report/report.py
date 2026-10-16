@@ -40,8 +40,17 @@ class ReproducibilityMeta(Versioned):
         # Requiring the field to be non-empty is not enough: only the shape
         # contamination_detect() emits shows that a check actually ran, so a
         # hand-written placeholder cannot stand in for "we checked".
+        # ``train_corpus_supplied`` is part of that shape: without it a report cannot
+        # tell "checked, nothing overlapped" from "never checked" (T-M7-11).
         cr = self.contamination_result
-        keys = {"eval_count", "train_overlap_count", "overlap_ratio", "contaminated", "overlap_signatures"}
+        keys = {
+            "train_corpus_supplied",
+            "eval_count",
+            "train_overlap_count",
+            "overlap_ratio",
+            "contaminated",
+            "overlap_signatures",
+        }
         if not (isinstance(cr, dict) and keys <= cr.keys()):
             missing.append("contamination_result")
         if missing:

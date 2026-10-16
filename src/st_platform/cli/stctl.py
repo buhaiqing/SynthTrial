@@ -10,7 +10,13 @@ from typing import Any
 
 from st_platform.audit.ledger import AuditLedger
 from st_platform.common.types import SafetyVerdictTier, sha256_hex
-from st_platform.dataset.core import Dataset, DatasetSplit, case_signature, contamination_detect
+from st_platform.dataset.core import (
+    Dataset,
+    DatasetSplit,
+    case_signature,
+    contamination_detect,
+    contamination_violated,
+)
 from st_platform.evaluation.pipeline import EvaluationPipeline
 from st_platform.infer import effect
 from st_platform.infer.multicorrect import bonferroni
@@ -149,7 +155,9 @@ def cmd_demo(args: argparse.Namespace) -> int:
     redlines = [DiagnosticRedline(id="rl.no_missed_critical", severity_level="BLOCK")]
     checker = SafetyChecker(redlines)
     verdict = checker.check(
-        results_by_rule={"rl.no_missed_critical": bool(contamination["contaminated"])},
+        # via the shared reader, like every other redline: `bool(contamination[...])` here
+        # would be a second, fail-open interpretation of the same shape (T-M7-11)
+        results_by_rule={"rl.no_missed_critical": contamination_violated(contamination)},
         registered_count=len(redlines),
         evaluated_count=len(redlines),
     )
@@ -295,10 +303,16 @@ class ContaminationRedline(DiagnosticRedline):
     distinguish memorisation from generalisation, so the report is not evidence
     of anything. Unmeasurable patterns are not claimed to be caught here — this
     rule only fails on contamination it can actually observe.
+
+    It also fails when contamination is **unknown** (no training corpus was
+    supplied): an unexcluded overlap is indistinguishable from an absent one, so
+    the run must not certify a clean conclusion it never measured (T-M7-11).
+    ``contamination_violated`` is the shared reader of the detection shape, so
+    this rule and the pipeline agree on what "checked" means.
     """
 
     def evaluate(self, evidence: dict) -> bool:
-        return bool((evidence.get("contamination") or {}).get("contaminated"))
+        return contamination_violated(evidence.get("contamination"))
 
 
 class SelfTestBlockRedline(DiagnosticRedline):
@@ -461,8 +475,11 @@ def cmd_run(args: argparse.Namespace) -> int:
                     "promotable": outcome.promotable,
                     "accuracy_before": outcome.accuracy_before,
                     "accuracy_after": outcome.accuracy_after,
-                    "contaminated": bool(contamination.get("contaminated")),
-                    "contamination_overlap": contamination.get("train_overlap_count", 0),
+                    # unknown stays null: bool() here would re-manufacture the
+                    # "checked, clean" claim for a run that never checked (T-M7-11)
+                    "contaminated": contamination.get("contaminated"),
+                    "contamination_overlap": contamination.get("train_overlap_count"),
+                    "train_corpus_supplied": contamination.get("train_corpus_supplied"),
                     "report": outcome.report_markdown,
                 },
                 ensure_ascii=False,

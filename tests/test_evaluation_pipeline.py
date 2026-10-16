@@ -11,7 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from st_platform.common.types import SafetyVerdictTier
-from st_platform.dataset.core import Dataset, DatasetSplit, case_signature
+from st_platform.dataset.core import Dataset, DatasetSplit, case_signature, contamination_violated
 from st_platform.evaluation import (
     EvaluationError,
     EvaluationOutcome,
@@ -30,14 +30,19 @@ CANDIDATE_VERSION = "cand-v2"
 
 
 class ContaminationRedline:
-    """Registered redline with a real evaluator: fires when the eval set leaks train data."""
+    """Registered redline with a real evaluator: fires when the eval set leaks train data.
+
+    Reads the detection result through ``contamination_violated`` — the single reader of
+    that shape — so this rule and stctl's agree that an unknown conclusion is a violation
+    rather than a clean one (T-M7-11).
+    """
 
     id = "rl.eval_contamination"
     severity = SafetyVerdictTier.BLOCK
     description = "eval samples must not overlap the training corpus"
 
     def evaluate(self, evidence: dict) -> bool:
-        return bool(evidence["contamination"]["contaminated"])
+        return contamination_violated(evidence["contamination"])
 
 
 class WarnRedline:
@@ -120,6 +125,15 @@ def make_runners() -> tuple[MockRunner, MockRunner]:
     )
 
 
+def clean_train_signatures() -> list[str]:
+    """A supplied training corpus that does not overlap the eval set.
+
+    A *measured* clean claim. Passing nothing instead means 'no corpus was supplied',
+    which must block instead of certifying cleanliness (T-M7-11) — so tests that assert a
+    PASS verdict have to supply this rather than rely on the absence of a corpus.
+    """
+    return [case_signature({"case_id": "TRAIN-ONLY", "text": "not in the eval set"})]
+
 def run_once(
     store: ReportStore,
     *,
@@ -150,7 +164,7 @@ def run_once(
 
 def test_clean_run_promotes_and_persists_report(tmp_path):
     store = ReportStore(tmp_path / "reports")
-    outcome = run_once(store)
+    outcome = run_once(store, train_signatures=clean_train_signatures())
 
     assert isinstance(outcome, EvaluationOutcome)
     assert outcome.verdict.tier == SafetyVerdictTier.PASS
@@ -203,8 +217,12 @@ def test_reproducibility_five_elements_are_rendered(tmp_path):
     assert repro.dataset_sha == task.dataset_sha
     assert repro.seed == 42
     assert repro.code_version
-    # contamination travels with the report, even when nothing overlapped
-    assert repro.contamination_result["contaminated"] is False
+    # run_once supplies no training corpus, so the honest conclusion is unknown.
+    # It used to assert `contaminated is False`, which certified a check that
+    # never ran (design.md 3.2: not-seen is not unseen).
+    assert repro.contamination_result["train_corpus_supplied"] is False
+    assert repro.contamination_result["contaminated"] is None
+    assert repro.contamination_result["train_overlap_count"] is None
     for line in ("model_version:", "dataset_version:", "dataset_sha:", "code_version:", "seed:"):
         assert line in outcome.report_markdown
 
@@ -233,9 +251,38 @@ def test_block_redline_is_not_promotable_and_report_still_renders(tmp_path):
     assert store.get(outcome.report_hash)["blocking_ids"] == ["rl.eval_contamination"]
 
 
+def test_unchecked_contamination_blocks_instead_of_certifying_clean(tmp_path):
+    """T-M7-11: with no training corpus the conclusion is unknown, and unknown must not promote.
+
+    Reproduced on main: a run with no corpus reported ``train_overlap_count=0``,
+    ``contaminated=False`` and ``promotable=True`` -- certifying a check that never ran
+    (design.md §3.2; CP-7: record 「没采到」 as null, not as 0).
+    """
+    store = ReportStore(tmp_path / "reports")
+    outcome = run_once(store)  # no train_signatures at all
+
+    cr = outcome.reproducibility.contamination_result
+    assert cr["train_corpus_supplied"] is False
+    assert cr["contaminated"] is None, "an unmeasured conclusion must stay unknown"
+    assert cr["train_overlap_count"] is None, "an unmeasured count must be null, not 0"
+
+    assert outcome.verdict.tier == SafetyVerdictTier.BLOCK
+    assert outcome.verdict.blocking_ids == ("rl.eval_contamination",)
+    assert outcome.promotable is False
+
+    # a veto on promotion is not a reason to lose the effectiveness evidence
+    assert len(outcome.results) == 2
+    assert outcome.accuracy_before is not None
+    assert store.exists(outcome.report_hash)
+
+
 def test_warn_rule_requires_human_approval(tmp_path):
     store = ReportStore(tmp_path / "reports")
-    outcome = run_once(store, redlines=[ContaminationRedline(), WarnRedline()])
+    outcome = run_once(
+        store,
+        redlines=[ContaminationRedline(), WarnRedline()],
+        train_signatures=clean_train_signatures(),
+    )
 
     assert outcome.verdict.tier == SafetyVerdictTier.WARN
     assert outcome.verdict.warning_ids == ("rl.coverage_gap",)
@@ -250,16 +297,18 @@ def test_finished_outcome_cannot_be_rewritten(tmp_path):
     and therefore remains a mutable list by contract (documented residual risk).
     """
     store = ReportStore(tmp_path / "reports")
-    outcome = run_once(store)
+    outcome = run_once(store, train_signatures=clean_train_signatures())
 
     with pytest.raises(ValidationError):
         outcome.verdict.tier = SafetyVerdictTier.BLOCK
     with pytest.raises(ValidationError):
         outcome.report_markdown = "tampered"
     # the nested verdict is a frozen snapshot too: no mutable container left inside it
+    # (tuple, not FrozenDict — so the mutator is absent, not merely refusing)
     assert outcome.verdict.blocking_ids == ()
+    assert not hasattr(outcome.verdict.blocking_ids, "append")
     with pytest.raises(AttributeError):
-        outcome.verdict.blocking_ids.append("rl.fake")
+        outcome.verdict.blocking_ids.append("rl.fake")  # type: ignore[attr-defined]
 
 
 def test_contamination_record_cannot_be_tampered(tmp_path):

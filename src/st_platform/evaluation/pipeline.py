@@ -23,7 +23,7 @@ from typing import Any
 
 from st_platform.common.freeze import freeze
 from st_platform.dataset.core import Dataset, contamination_detect
-from st_platform.evaluation.outcome import EvaluationOutcome
+from st_platform.evaluation.outcome import EvaluationOutcome, GuardrailVerdict
 from st_platform.infer import effect, multicorrect
 from st_platform.infer.paired import mcnemar, paired_t_test
 from st_platform.infer.result import PairedResult, assert_correction_applied
@@ -244,7 +244,10 @@ class EvaluationPipeline:
         pairs = self.pair_predictions(dataset, baseline_runner, candidate_runner)
         results = self.paired_statistics(pairs, metrics)
 
-        contamination = freeze(contamination_detect(dataset, set(train_signatures or ())))
+        # Pass ``train_signatures`` through untouched: collapsing None into an empty set
+        # here is what let the pipeline certify "not contaminated" for a check that never
+        # ran (T-M7-11). None now stays None and reaches the redline as unknown.
+        contamination = freeze(contamination_detect(dataset, train_signatures))
         verdict = self.safety_verdict(
             {
                 "contamination": contamination,
@@ -300,7 +303,9 @@ class EvaluationPipeline:
             task_id=task.task_id,
             content_hash=task.content_hash,
             report_hash=report_hash,
-            verdict=verdict,
+            # Explicit snapshot step (D-3): the domain SafetyVerdict is a mutable
+            # dataclass, so the outcome must hold the frozen GuardrailVerdict.
+            verdict=GuardrailVerdict.from_domain_verdict(verdict),
             results=results,
             reproducibility=repro,
             accuracy_before=accuracy_before,
@@ -327,10 +332,16 @@ class EvaluationPipeline:
         ]
         for r in results:
             quantity = "paired predictions (label)" if r.method == "mcnemar" else "paired scores"
+            # Correction is mandatory upstream (``assert_correction_applied`` ran in
+            # ``paired_statistics``), so None is unreachable here; render it as n/a
+            # rather than letting a comparison against None raise or, worse, reading as
+            # "not significant".
+            p_corr = r.p_corrected
+            significant = "n/a" if p_corr is None else ("yes" if p_corr < ALPHA else "no")
             lines.append(
                 f"| {r.test_name} | {quantity} | {r.abs_lift:.6g} | {r.rel_lift:.6g} | "
-                f"[{r.ci_low:.6g}, {r.ci_high:.6g}] | {r.p_raw:.6g} | {r.p_corrected:.6g} | "
-                f"{'yes' if r.p_corrected < ALPHA else 'no'} |"
+                f"[{r.ci_low:.6g}, {r.ci_high:.6g}] | {r.p_raw:.6g} | "
+                f"{'n/a' if p_corr is None else format(p_corr, '.6g')} | {significant} |"
             )
         lines += [
             "",

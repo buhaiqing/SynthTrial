@@ -36,6 +36,19 @@ def _write_dataset(tmp_path: Path, n: int = 30) -> Path:
     return path
 
 
+def _write_clean_train(tmp_path: Path) -> Path:
+    """A training corpus sharing nothing with the eval set.
+
+    A run with no corpus is BLOCKed, because "we checked nothing" is not "we
+    checked and found nothing" (design.md 3.2). Tests about wiring -- persisting
+    a report, JSON parsing, determinism -- want a PASS verdict, so they supply
+    one here rather than each re-asserting the contamination policy.
+    """
+    p = tmp_path / "train-clean.json"
+    p.write_text(json.dumps([case_signature({"case_id": "clean", "text": "clean"})]))
+    return p
+
+
 def _args(tmp_path: Path, dataset: Path, **over) -> argparse.Namespace:
     base = {
         "dataset": str(dataset),
@@ -47,6 +60,7 @@ def _args(tmp_path: Path, dataset: Path, **over) -> argparse.Namespace:
         "json": False,
         "out": str(tmp_path / "sample.json"),
         "open_ui": False,
+        "train_signatures": str(_write_clean_train(tmp_path)),
     }
     base.update(over)
     return argparse.Namespace(**base)
@@ -102,6 +116,31 @@ def test_run_json_mode_is_parseable(tmp_path, capsys):
 
 
 # ---------------------------------------------------------------- gate
+
+
+def test_run_without_train_signatures_does_not_certify_clean(tmp_path, capsys):
+    """T-M7-11: omitting --train-signatures must block, not report a clean conclusion.
+
+    Reproduced on main: the default path printed ``train_overlap_count=0``,
+    ``contaminated=False`` and ``promotable=True`` while never having looked at a
+    training corpus. A redline evaluated against evidence that measures nothing is not
+    a passing redline (design.md §3.2; the unevaluated-redline precedent in
+    ``EvaluationPipeline.safety_verdict``).
+    """
+    ds = _write_dataset(tmp_path)
+    rc = cmd_run(_args(tmp_path, ds, train_signatures=None, json=True))
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc != 0, "a run that never checked contamination must not exit 0"
+    assert payload["verdict"] == "BLOCK"
+    assert payload["promotable"] is False
+    # unknown must survive to the JSON as null: bool() there would re-manufacture the claim
+    assert payload["train_corpus_supplied"] is False
+    assert payload["contaminated"] is None
+    assert payload["contamination_overlap"] is None
+    # the evidence itself is still produced and archived -- only promotion is refused
+    assert payload["task_state"] == "DONE"
+    assert payload["report"]
 
 
 def test_run_exit_code_is_nonzero_when_not_promotable(tmp_path, capsys):
@@ -227,6 +266,8 @@ def test_run_runs_as_a_script(tmp_path):
         str(ds),
         "--model-version",
         "v2",
+        "--train-signatures",
+        str(_write_clean_train(tmp_path)),
         "--store",
         str(tmp_path / "store"),
     )

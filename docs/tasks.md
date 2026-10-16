@@ -25,9 +25,9 @@
 | [M4](#m4)护栏与报告) | safety / report | ✅ |
 | [M5](#m5)结果存储) | store（内容寻址、只追加） | ✅ |
 | [M6](#m6)评测管线) | evaluation（P0 纵向切片） | ✅ |
-| [M7](#m7)端到端接线--正确性收口) | **接线 + 10 项收口** | ✅ |
+| [M7](#m7)端到端接线--正确性收口) | **接线 + 4 项正确性缺口** | ✅ |
 | [M8](#m8)文档与依赖图) | mermaid 图 / RUNBOOK / ARCHITECTURE / playbook | ✅ |
-| [M9](#m9)p1-上线放量) | st-bucket / st-lab | ⬜ |
+| [M9](#m9)p1-上线放量) | st-bucket / st-lab | 🔧 |
 | [M10](#m10)p2-因果推断) | st-causal | ⬜ |
 | [M11](#m11)生产基建) | Postgres / ClickHouse / Prefect / HTTP API | ⬜ |
 | [M12](#m12)需人拍板) | Q1·Q2·Q4·Q5·Q6 | ⛔ |
@@ -162,6 +162,18 @@
 | T-M7-08 | 修 `ARCHITECTURE.md:41` cli→store 漂移 | `grep -n "not.*task.*,.*store" docs/ARCHITECTURE.md` → 无 | — | ✅ |
 | T-M7-09 | 修 design §11.1 自相矛盾（"st-bucket 一次都不出现"但图中出现 4 次） | 人工复核该段 | — | ✅ |
 | T-M7-10 | CI 门禁接入 `gen_dep_graph.py --check` | `grep -c 'gen_dep_graph' .github/workflows/ci.yml` ≥1 **且** `grep -c '\|\| true' .github/workflows/ci.yml` → 0 （门禁不能有一步永远为真）| — | ✅ |
+| T-M7-11 | **未检测 ≠ 已检测且无重叠** —— 无 `--train-signatures` 时不得报 `contaminated=False` / `promotable=true` | `pytest -q tests/test_cli_run.py -k without_train_signatures` | T-M7-07 | ✅ |
+
+**T-M7-11 说明：** 接通 T-M7-07 时发现一个更靠上游的缺陷。T-M7-07 要求第五要素是**真实结论**，
+但 `EvaluationPipeline.run` 写着 `set(train_signatures or ())`：缺语料与空语料被压成同一个空集，
+`contamination_detect` 于是**度量**出「重叠 0 条」，redline 把它读成「未交叉」，CLI 再报
+`promotable: true` 并退出 0 —— 一个从未执行的检测被认证为通过（CP-7：把「没采到」记成 0）。
+CLI 自己的 `_load_train_signatures` 文档字符串早就写明 `None` 必须与 `[]` 区分，接口却在下游弄丢了它。
+
+修法：`contamination_detect(ds, None)` 返回 `train_corpus_supplied=False` + `contaminated=None`
++ 计数为 `None`；新增唯一读者 `contamination_violated()`，**失败关闭**（非实测 `False` 即违规），
+两条 redline 均委托它。代价是**变严**：无语料的运行现在 `BLOCK`，但有效性数字仍完整产出
+（拒绝放量 ≠ 丢失证据）。变异验证：仅回退 pipeline 那一行即失败 3 例、其余 61 例仍绿。
 
 **T-M7-07 说明：** 这曾是设计与实现的真实分歧（design.md §4.1 要求五要素，实现只校验四项 + seed），
 用户 2026-10-17 批准破坏性变更后关闭；P0 尚无落盘报告，失效面为零。
@@ -210,11 +222,11 @@ cd /tmp/mmd && node validate.mjs   # mermaid v11 parser，4/4 OK
 
 | ID | Task | 验收 | 依赖 |
 |---|---|---|---|
-| T-M9-01 | `st-bucket` 确定性分桶（MurmurHash） | 同 (user, exp) 跨进程同组 | Q6 |
-| T-M9-02 | 一致性验证方法（跨地域双活） | 给出可执行一致性验证脚本 | — |
-| T-M9-03 | 灰度放量 10%→50%→100% | 调整生效 < 1s | T-M9-01 |
-| T-M9-04 | **Assignment / Exposure 分离**（design §4.3，P1 最高优先级） | 端到端对账暴露"有 A 无 E"比例 | T-M9-01 |
-| T-M9-05 | `st-lab` 任务编排与配额 | — | T-M7-01 |
+| T-M9-01 | `st-bucket` 确定性分桶（MurmurHash） | 同 (user, exp) 跨进程同组 | Q6 | ✅ |
+| T-M9-02 | 一致性验证方法（跨地域双活） | 给出可执行一致性验证脚本 | — | ✅ |
+| T-M9-03 | 灰度放量 10%→50%→100% | 调整生效 < 1s | T-M9-01 | ✅ |
+| T-M9-04 | **Assignment / Exposure 分离**（design §4.3，P1 最高优先级） | 端到端对账暴露"有 A 无 E"比例 | T-M9-01 | ✅ |
+| T-M9-05 | `st-lab` 任务编排与配额 | — | T-M7-01 | ✅ |
 | T-M9-06 | 正交/多层实验架构 | — | P2 决策 |
 
 ---

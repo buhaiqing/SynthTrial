@@ -27,6 +27,7 @@ def _meta(**overrides):
         "code_version": "cv",
         "seed": 7,
         "contamination_result": {
+            "train_corpus_supplied": True,
             "eval_count": 1,
             "train_overlap_count": 0,
             "overlap_ratio": 0.0,
@@ -66,6 +67,7 @@ def test_validate_rejects_a_placeholder_contamination_result():
 
 def test_validate_accepts_a_real_contamination_conclusion():
     real = {
+        "train_corpus_supplied": True,
         "eval_count": 30,
         "train_overlap_count": 0,
         "overlap_ratio": 0.0,
@@ -73,6 +75,37 @@ def test_validate_accepts_a_real_contamination_conclusion():
         "overlap_signatures": [],
     }
     _meta(contamination_result=real).validate_complete()  # no raise
+
+
+def test_validate_accepts_an_honest_unknown_conclusion():
+    """A run with no training corpus still has a fifth element — an honest unknown.
+
+    It must be expressible, otherwise the only way to satisfy the gate is to invent a
+    clean conclusion (T-M7-11).
+    """
+    unknown = {
+        "train_corpus_supplied": False,
+        "eval_count": 30,
+        "train_overlap_count": None,
+        "overlap_ratio": None,
+        "contaminated": None,
+        "overlap_signatures": None,
+    }
+    _meta(contamination_result=unknown).validate_complete()  # no raise
+
+
+def test_validate_rejects_a_conclusion_that_hides_whether_a_corpus_was_supplied():
+    """The shape without ``train_corpus_supplied`` cannot distinguish 'checked clean'
+    from 'never checked' — the exact ambiguity T-M7-11 closed."""
+    no_flag = {
+        "eval_count": 30,
+        "train_overlap_count": 0,
+        "overlap_ratio": 0.0,
+        "contaminated": False,
+        "overlap_signatures": [],
+    }
+    with pytest.raises(ReportError, match="contamination_result"):
+        _meta(contamination_result=no_flag).validate_complete()
 
 
 @pytest.mark.parametrize(
