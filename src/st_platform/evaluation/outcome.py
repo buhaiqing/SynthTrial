@@ -58,12 +58,25 @@ class GuardrailVerdict(Versioned):
 
 
 class EvaluationOutcome(Versioned):
-    """Frozen result of ``EvaluationPipeline.run``."""
+    """Frozen result of ``EvaluationPipeline.run``.
+
+    Immutability scope (D-3): attribute rebinding is refused (pydantic ``frozen``),
+    ``verdict`` is a :class:`GuardrailVerdict` snapshot and ``reproducibility.contamination_result``
+    is deep-frozen. Residual risk, by contract: ``results`` is declared ``list[PairedResult]``
+    per the slice spec, so the list container itself stays mutable.
+
+    Addressing: ``content_hash`` is the **task snapshot** hash (identical task => identical
+    content_hash, regardless of metrics/redlines/correction); ``report_hash`` is the
+    content address of this specific evaluation's persisted payload. Cache per-run
+    results on ``report_hash``, not on ``content_hash``.
+    """
 
     task_id: str
-    #: Task snapshot hash: identical inputs replay to the same content address.
+    #: Task snapshot hash (identical snapshot => identical hash; metrics/redlines are
+    #: NOT part of it -- see the class docstring).
     content_hash: str
-    #: ReportStore address of the persisted report payload (same inputs => same hash).
+    #: ReportStore address of the persisted report payload (same evaluation inputs =>
+    #: same hash). This is the per-evaluation address; see the class docstring.
     report_hash: str
     #: Guardrail verdict -- kept apart from the effectiveness numbers below.
     verdict: GuardrailVerdict

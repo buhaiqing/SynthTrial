@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
+from st_platform.common.freeze import freeze
 from st_platform.dataset.core import Dataset, contamination_detect
 from st_platform.evaluation.outcome import EvaluationOutcome
 from st_platform.infer import effect, multicorrect
@@ -36,6 +37,18 @@ from st_platform.version import __version__
 
 #: Dataset row key holding ground truth. Absent => accuracy stays ``None``.
 GROUND_TRUTH_KEYS = ("label", "y", "target", "gold")
+
+#: Metric kinds this pipeline can evaluate from the runner contract (``score``/``label``).
+#: Anything else is refused loudly: silently coercing e.g. a TEXT metric into a number
+#: and t-testing it would put a made-up number into a medical report.
+SUPPORTED_METRIC_KINDS: dict[MetricKind, str] = {
+    MetricKind.RATE: "label",
+    MetricKind.SCORE: "score",
+}
+
+#: Significance threshold for the "significant after correction" column (reported next to
+#: effect size and CI -- a p-value alone is never the conclusion, design §3 M003 F4).
+ALPHA = 0.05
 
 #: Correction methods the pipeline may apply. Bonferroni is the default because the
 #: spec names it first and it is the strictest (design §3 M003 F3).
@@ -181,9 +194,8 @@ class EvaluationPipeline:
     def safety_verdict(self, evidence: dict, redlines: Sequence[Any]) -> SafetyVerdict:
         """Evaluate registered redlines; the verdict stays separate from effectiveness.
 
-        A registered rule without an ``evaluate`` hook is *not* treated as passing: it
-        is left out of ``results_by_rule`` so ``SafetyChecker`` counts it as uncovered and
-        the coverage gap reaches the report (design §7 recall SLO).
+        Every registered rule must be evaluable (``evaluate(evidence) -> bool``); a
+        registered rule without an evaluator aborts the run instead of counting as clean.
         """
         rules = list(redlines)
         if not rules:
@@ -198,7 +210,16 @@ class EvaluationPipeline:
         for rule in rules:
             evaluate = getattr(rule, "evaluate", None)
             if evaluate is None:
-                continue  # registered but unevaluated -> reported as uncovered
+                # Fail closed. A registered rule that nobody evaluated used to fall
+                # through as "not fired" => PASS/promotable (Critic-R1 BLOCKER: a BLOCK
+                # redline without an evaluator promoted while 40/40 rows were contaminated).
+                # "Not checked" must never be reported as "not crossed" (design §7: the
+                # registered set's recall is claimed to be 100%).
+                raise EvaluationError(
+                    f"redline {rule.id!r} has no evaluate(evidence) hook; an unevaluated "
+                    "redline is never a PASS — supply an evaluator (or precomputed results) "
+                    "for every registered rule"
+                )
             results_by_rule[str(rule.id)] = bool(evaluate(evidence))
 
         return SafetyChecker(rules).check(results_by_rule=results_by_rule)
@@ -218,11 +239,12 @@ class EvaluationPipeline:
     ) -> EvaluationOutcome:
         """Evaluate the candidate against the baseline and persist the report."""
         self._check_runners(task, baseline_runner, candidate_runner)
+        self._check_dataset(task, dataset)
 
         pairs = self.pair_predictions(dataset, baseline_runner, candidate_runner)
         results = self.paired_statistics(pairs, metrics)
 
-        contamination = contamination_detect(dataset, set(train_signatures or ()))
+        contamination = freeze(contamination_detect(dataset, set(train_signatures or ())))
         verdict = self.safety_verdict(
             {
                 "contamination": contamination,
@@ -250,6 +272,7 @@ class EvaluationPipeline:
             accuracy_before=accuracy_before,
             accuracy_after=accuracy_after,
         )
+        markdown = f"{markdown}\n\n{self._effect_size_section(results)}"
         report_hash = store.save(
             {
                 "task_id": task.task_id,
@@ -285,6 +308,41 @@ class EvaluationPipeline:
             report_markdown=markdown,
         )
 
+    @staticmethod
+    def _effect_size_section(results: Sequence[PairedResult]) -> str:
+        """Effect size + 95% CI table.
+
+        The upstream renderer shows p-values only (read-only contract, reported to the
+        harness). Design §3 M003 F4 forbids presenting a p-value as the conclusion and
+        §7 requires absolute lift + 95% CI alongside, so the pipeline appends them.
+        """
+        lines = [
+            "## Effect size & 95% CI",
+            "",
+            (
+                "| Metric | Tested quantity | abs lift | rel lift | 95% CI (abs lift) | p_raw | "
+                "p_corrected (authoritative) | significant after correction |"
+            ),
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for r in results:
+            quantity = "paired predictions (label)" if r.method == "mcnemar" else "paired scores"
+            lines.append(
+                f"| {r.test_name} | {quantity} | {r.abs_lift:.6g} | {r.rel_lift:.6g} | "
+                f"[{r.ci_low:.6g}, {r.ci_high:.6g}] | {r.p_raw:.6g} | {r.p_corrected:.6g} | "
+                f"{'yes' if r.p_corrected < ALPHA else 'no'} |"
+            )
+        lines += [
+            "",
+            (
+                "Accuracy before/after above is measured against the dataset ground truth label; "
+                "the tested quantities in this table are the paired model outputs listed per row. "
+                "Effect size and 95% CI are the decision basis — a p-value alone is never a "
+                "conclusion (M003 F4)."
+            ),
+        ]
+        return "\n".join(lines)
+
     # ------------------------------------------------------------------ helpers
     @staticmethod
     def _check_runners(task: Task, baseline_runner: Any, candidate_runner: Any) -> None:
@@ -302,8 +360,28 @@ class EvaluationPipeline:
             )
 
     @staticmethod
+    def _check_dataset(task: Task, dataset: Dataset) -> None:
+        """Bind the snapshot to the data actually evaluated (§4.1: the report must answer
+        "how was this scored"). A report that prints the snapshot's ``dataset_sha`` while
+        scanning a different corpus is a claim it cannot back up."""
+        actual_sha = dataset.sha256 or dataset.compute_sha()
+        snapshot = (task.dataset_id, task.dataset_version, task.dataset_sha)
+        actual = (dataset.dataset_id, dataset.version, actual_sha)
+        if actual != snapshot:
+            raise EvaluationError(
+                f"evaluated dataset {actual[0]}@{actual[1]} (sha {actual[2][:12]}) does not "
+                f"match the task snapshot {snapshot[0]}@{snapshot[1]} (sha {str(snapshot[2])[:12]})"
+            )
+
+    @staticmethod
     def _value(metric: MetricDefinition, prediction: dict) -> float:
-        key = "label" if metric.kind == MetricKind.RATE else "score"
+        key = SUPPORTED_METRIC_KINDS.get(metric.kind)
+        if key is None:
+            supported = ", ".join(sorted(k.value for k in SUPPORTED_METRIC_KINDS))
+            raise EvaluationError(
+                f"metric {metric.metric_id} ({metric.kind.value}) cannot be evaluated from "
+                f"the runner contract (score/label); supported kinds: {supported}"
+            )
         if key not in prediction:
             raise EvaluationError(
                 f"metric {metric.metric_id} ({metric.kind.value}) needs {key!r} in the prediction"
@@ -329,7 +407,9 @@ class EvaluationPipeline:
 
 
 __all__ = [
+    "ALPHA",
     "CORRECTIONS",
+    "SUPPORTED_METRIC_KINDS",
     "EvaluationError",
     "EvaluationPipeline",
     "UnalignedCases",

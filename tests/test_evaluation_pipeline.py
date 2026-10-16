@@ -52,7 +52,7 @@ class WarnRedline:
 
 
 class MetadataOnlyRedline:
-    """Registered but not evaluated: must surface as uncovered, never as a silent PASS."""
+    """Registered but with no evaluator: must never be mistaken for a PASS."""
 
     id = "rl.hand_review"
     severity = SafetyVerdictTier.WARN
@@ -243,7 +243,12 @@ def test_warn_rule_requires_human_approval(tmp_path):
 
 
 def test_finished_outcome_cannot_be_rewritten(tmp_path):
-    """D-3: a completed result is not overwritable -- not even the one-vote veto."""
+    """D-3: a completed result is not overwritable -- not even the one-vote veto.
+
+    Scope of the promise: attribute rebinding, the nested guardrail verdict and the
+    contamination record are immutable. ``results`` is spec-typed ``list[PairedResult]``
+    and therefore remains a mutable list by contract (documented residual risk).
+    """
     store = ReportStore(tmp_path / "reports")
     outcome = run_once(store)
 
@@ -255,6 +260,14 @@ def test_finished_outcome_cannot_be_rewritten(tmp_path):
     assert outcome.verdict.blocking_ids == ()
     with pytest.raises(AttributeError):
         outcome.verdict.blocking_ids.append("rl.fake")
+
+
+def test_contamination_record_cannot_be_tampered(tmp_path):
+    """The contamination conclusion is evidence; it must not be editable in place."""
+    store = ReportStore(tmp_path / "reports")
+    outcome = run_once(store)
+    with pytest.raises(TypeError):
+        outcome.reproducibility.contamination_result["contaminated"] = True
 
 
 # (c) multiple-comparison correction -----------------------------------------
@@ -302,15 +315,88 @@ def test_identical_inputs_produce_identical_report_hash(tmp_path):
 # coverage accounting --------------------------------------------------------
 
 
-def test_rule_without_evaluator_is_counted_uncovered(tmp_path):
+def test_unevaluated_registered_redline_is_rejected(tmp_path):
+    """An unevaluated redline is not a PASS (design §7: registered-set recall = 100%)."""
     store = ReportStore(tmp_path / "reports")
-    outcome = run_once(store, redlines=[ContaminationRedline(), MetadataOnlyRedline()])
+    with pytest.raises(EvaluationError):
+        run_once(store, redlines=[ContaminationRedline(), MetadataOnlyRedline()])
+    assert store.list_hashes() == []
 
-    assert outcome.verdict.covered_rule_count == 1
-    assert outcome.verdict.uncovered_rule_count == 1
-    assert outcome.verdict.uncovered_ratio == pytest.approx(0.5)
-    assert "Uncovered rules: 1" in outcome.report_markdown
-    assert outcome.promotable is True  # nothing fired; the gap is visible, not hidden
+
+def test_block_rule_without_evaluator_cannot_silently_promote(tmp_path):
+    """Critic-R1 BLOCKER, reproduced: a registered BLOCK redline with no evaluator plus
+    40/40 real training contamination used to yield tier=PASS and promotable=True.
+    Unevaluated must fail loudly instead of promoting (M006: 检测必须命中，不得静默通过).
+    """
+    store = ReportStore(tmp_path / "reports")
+    dataset = make_dataset()
+    leaks = [case_signature(row) for row in dataset.rows]  # every eval sample leaked
+    with pytest.raises(EvaluationError):
+        run_once(
+            store,
+            redlines=[DiagnosticRedline(id="rl.no_missed_critical", severity_level="BLOCK")],
+            train_signatures=leaks,
+        )
+    assert store.list_hashes() == []
+
+
+def test_dataset_must_match_task_snapshot(tmp_path):
+    """Critic-R1 MAJOR: the report printed the snapshot's dataset_sha while a different
+    dataset was actually evaluated. §4.1: the report must answer "how was this scored".
+    """
+    store = ReportStore(tmp_path / "reports")
+    snapshot_dataset = make_dataset()
+    task = make_task(snapshot_dataset)
+    other_rows = make_dataset().rows[:5]  # different corpus -> different sha
+    other = snapshot_dataset.model_copy(
+        update={"dataset_id": "cards-OTHER", "rows": other_rows, "sha256": ""}
+    )
+    baseline, candidate = make_runners()
+    with pytest.raises(EvaluationError):
+        EvaluationPipeline().run(
+            task=task,
+            dataset=other,
+            baseline_runner=baseline,
+            candidate_runner=candidate,
+            metrics=make_metrics(),
+            redlines=[ContaminationRedline()],
+            store=store,
+        )
+    assert store.list_hashes() == []
+
+
+def test_report_carries_effect_size_and_ci(tmp_path):
+    """Critic-R1 MAJOR: the report rendered p-values only (M003 F4: 效应量 + 区间,
+    不只报 p 值; §7: 绝对提升率 + 95% CI 才可验收).
+    """
+    store = ReportStore(tmp_path / "reports")
+    outcome = run_once(store)
+    md = outcome.report_markdown
+    assert "Effect size" in md and "95% CI" in md
+    for result in outcome.results:
+        assert f"{result.ci_low:.6g}" in md
+        assert f"{result.ci_high:.6g}" in md
+        assert f"{result.abs_lift:.6g}" in md
+
+
+def test_non_numeric_metric_kind_is_rejected(tmp_path):
+    """Critic-R1 MINOR: a TEXT metric was silently coerced to a number and t-tested."""
+    store = ReportStore(tmp_path / "reports")
+    text_metric = MetricDefinition(
+        metric_id="m.note", name="note", kind=MetricKind.TEXT, owner="st-ledger"
+    )
+    with pytest.raises(EvaluationError):
+        run_once(store, metrics=[text_metric])
+    assert store.list_hashes() == []
+
+
+def test_content_hash_addresses_task_snapshot_not_run_inputs(tmp_path):
+    """Pinned contract (Critic-R1 F5): metrics/redlines are NOT part of ``content_hash``;
+    ``report_hash`` is the per-evaluation address used for result caching."""
+    with_2 = run_once(ReportStore(tmp_path / "a"))
+    with_1 = run_once(ReportStore(tmp_path / "b"), metrics=make_metrics()[:1])
+    assert with_2.content_hash == with_1.content_hash  # same task snapshot
+    assert with_2.report_hash != with_1.report_hash  # different evaluation inputs
 
 
 def test_degenerate_runs_are_rejected(tmp_path):
