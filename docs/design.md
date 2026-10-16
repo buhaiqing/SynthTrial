@@ -405,6 +405,7 @@ flowchart LR
     N_EVALUATION["evaluation/"]
     N_INFER["infer/"]
     N_INFERENCE["inference/"]
+    N_PERSISTENCE["persistence"]
     N_REGISTRY["registry/"]
     N_REPORT["report/"]
     N_SAFETY["safety/"]
@@ -440,6 +441,7 @@ flowchart LR
     N_EVALUATION --> N_TASK
     N_EVALUATION --> N_VERSION
     N_INFERENCE --> N_COMMON
+    N_PERSISTENCE --> N_TASK
     N_REGISTRY --> N_COMMON
     N_REPORT --> N_COMMON
     N_REPORT --> N_SAFETY
