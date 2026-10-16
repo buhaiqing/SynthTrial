@@ -16,6 +16,7 @@ from st_platform.registry.metrics import MetricDefinition, MetricKind, MetricReg
 from st_platform.report.report import ReportRenderer, ReproducibilityMeta
 from st_platform.safety.checker import SafetyChecker
 from st_platform.safety.rules import DiagnosticRedline
+from st_platform.store import ReportStore
 
 
 def _demo_dataset(n: int = 40) -> Dataset:
@@ -169,12 +170,53 @@ def cmd_demo(args: argparse.Namespace) -> int:
     return 0
 
 
+DEFAULT_STORE_DIR = "reports"
+
+
+def cmd_reports(args: argparse.Namespace) -> int:
+    """List reports persisted in a ReportStore.
+
+    Sorted by created_at descending where available (newest first). Exit code
+    is 0 as long as the store is *readable*; a corrupt entry is surfaced with
+    ``corrupt: true``, not hidden, because hiding it would make the listing
+    untrustworthy.
+    """
+    store = ReportStore(getattr(args, "store", None) or DEFAULT_STORE_DIR)
+    rows = store.summaries()
+
+    def _sort_key(row: dict) -> str:
+        created = row.get("created_at")
+        return str(created) if created is not None else ""
+
+    rows = sorted(rows, key=_sort_key, reverse=True)
+
+    if getattr(args, "json", False):
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+
+    if not rows:
+        print("no reports in store")
+        return 0
+
+    for row in rows:
+        flag = " [CORRUPT]" if row.get("corrupt") else ""
+        line = (
+            f"{row.get('created_at', '?')}  {row.get('task_id', '?')}  "
+            f"{row.get('model_version', '?')}  {row.get('verdict', '?')}{flag}"
+        )
+        print(line)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="stctl", description="SynthTrial P0 CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("demo", help="run an end-to-end demo evaluation")
     d.add_argument("--n", type=int, default=40, help="dataset size")
     d.add_argument("--json", action="store_true", help="output JSON")
+    r = sub.add_parser("reports", help="list persisted reports")
+    r.add_argument("--store", default=DEFAULT_STORE_DIR, help="report store directory")
+    r.add_argument("--json", action="store_true", help="output JSON")
     return p
 
 
@@ -182,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.cmd == "demo":
         return cmd_demo(args)
+    if args.cmd == "reports":
+        return cmd_reports(args)
     return 1
 
 
