@@ -401,7 +401,7 @@ flowchart LR
     REPORT["report/"]
     REGISTRY["registry/"]
     DATASET["dataset/"]
-    STORE["store/"]
+    STORE["store.py"]
     AUDIT["audit/"]
     COMMON["common/"]
     EVAL["evaluation/<br/>P0 评测管线<br/>⚠️ 合并中 · 尚未落地"]
