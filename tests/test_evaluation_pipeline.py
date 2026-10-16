@@ -94,20 +94,34 @@ def make_dataset(n: int = 40) -> Dataset:
     )
 
 
-def make_metrics() -> list[MetricDefinition]:
-    """Two registered metrics: one binary (RATE) + one continuous (SCORE)."""
+def make_registry() -> MetricRegistry:
+    """The seeded metric catalogue. Registry-first on purpose (T-M7-13).
+
+    ``make_metrics`` used to build a registry, throw it away and hand back loose
+    definitions, so nothing downstream could bind a report number to a registered
+    id+version. The registry is now the thing tests and the CLI both pass in.
+    """
     registry = MetricRegistry()
-    accuracy = registry.register(
+    registry.register(
         MetricDefinition(
             metric_id="m.acc", name="accuracy", kind=MetricKind.RATE, owner="st-ledger"
         )
     )
-    score = registry.register(
+    registry.register(
         MetricDefinition(
             metric_id="m.score", name="diagnostic_score", kind=MetricKind.SCORE, owner="st-ledger"
         )
     )
-    return [accuracy, score]
+    return registry
+
+
+def make_metrics(registry: MetricRegistry) -> list[MetricDefinition]:
+    """Two registered metrics: one binary (RATE) + one continuous (SCORE).
+
+    Resolved from the registry rather than constructed inline, so the definitions the
+    pipeline sees are provably the registered ones.
+    """
+    return [registry.all_versions("m.acc")[0], registry.all_versions("m.score")[0]]
 
 
 def make_task(dataset: Dataset, *, params: dict | None = None) -> Task:
@@ -145,8 +159,10 @@ def run_once(
     params: dict | None = None,
     train_signatures: list[str] | None = None,
     ledger: AuditLedger | None = None,
+    registry: MetricRegistry | None = None,
 ) -> EvaluationOutcome:
     """One full run over freshly built (but content-identical) inputs."""
+    registry = registry if registry is not None else make_registry()
     dataset = make_dataset()
     task = make_task(dataset, params=params)
     baseline, candidate = make_runners()
@@ -155,12 +171,67 @@ def run_once(
         dataset=dataset,
         baseline_runner=baseline,
         candidate_runner=candidate_runner or candidate,
-        metrics=metrics if metrics is not None else make_metrics(),
+        metrics=metrics if metrics is not None else make_metrics(registry),
         redlines=redlines if redlines is not None else [ContaminationRedline()],
         store=store,
         train_signatures=train_signatures,
         ledger=ledger,
+        registry=registry,
     )
+
+
+def test_pipeline_refuses_an_unregistered_metric(tmp_path):
+    """T-M7-13: a report number must map to a *registered* id (spec §3 user story).
+
+    The registry's guarantees had zero callers outside their own module, so a report
+    could name any id it liked. An unregistered id must abort the run.
+    """
+    store = ReportStore(tmp_path / "reports")
+    registry = make_registry()
+    ghost = MetricDefinition(metric_id="m.not_registered", name="ghost", kind=MetricKind.SCORE)
+    with pytest.raises(EvaluationError, match="not registered"):
+        run_once(
+            store,
+            metrics=[ghost],
+            registry=registry,
+            train_signatures=clean_train_signatures(),
+        )
+    assert not store.list_hashes(), "a refused run must not persist a report"
+
+
+def test_pipeline_refuses_a_version_the_registry_never_recorded(tmp_path):
+    """Asking for ``m.acc@7`` when only v1 exists must not silently evaluate v1."""
+    store = ReportStore(tmp_path / "reports")
+    registry = make_registry()
+    phantom = registry.all_versions("m.acc")[0].model_copy(update={"version": 7})
+    with pytest.raises(EvaluationError, match="version"):
+        run_once(
+            store,
+            metrics=[phantom],
+            registry=registry,
+            train_signatures=clean_train_signatures(),
+        )
+    assert not store.list_hashes()
+
+
+def test_metric_identity_comes_from_the_registry_not_the_caller(tmp_path):
+    """A caller cannot smuggle an altered definition past the registry.
+
+    Same id and version, different name: the registered definition must win, because
+    the report's ``test_name`` is what an auditor reads back as the metric's identity.
+    """
+    store = ReportStore(tmp_path / "reports")
+    registry = make_registry()
+    registered = registry.all_versions("m.acc")[0]
+    doctored = registered.model_copy(update={"name": "something_else"})
+    outcome = run_once(
+        store,
+        metrics=[doctored, registry.all_versions("m.score")[0]],
+        registry=registry,
+        train_signatures=clean_train_signatures(),
+    )
+    assert outcome.results[0].test_name == "m.acc@1"
+    assert "something_else" not in outcome.report_markdown
 
 
 def test_pipeline_records_the_evaluation_in_the_audit_ledger(tmp_path):
@@ -452,15 +523,17 @@ def test_dataset_must_match_task_snapshot(tmp_path):
         store = ReportStore(tmp_path / label.replace(" ", "_").replace(",", ""))
         other = snapshot_dataset.model_copy(update=update)
         baseline, candidate = make_runners()
+        reg = make_registry()
         with pytest.raises(EvaluationError):
             EvaluationPipeline().run(
                 task=task,
                 dataset=other,
                 baseline_runner=baseline,
                 candidate_runner=candidate,
-                metrics=make_metrics(),
+                metrics=make_metrics(reg),
                 redlines=[ContaminationRedline()],
                 store=store,
+                registry=reg,
             )
         assert store.list_hashes() == [], label
 
@@ -494,7 +567,7 @@ def test_content_hash_addresses_task_snapshot_not_run_inputs(tmp_path):
     """Pinned contract (Critic-R1 F5): metrics/redlines are NOT part of ``content_hash``;
     ``report_hash`` is the per-evaluation address used for result caching."""
     with_2 = run_once(ReportStore(tmp_path / "a"))
-    with_1 = run_once(ReportStore(tmp_path / "b"), metrics=make_metrics()[:1])
+    with_1 = run_once(ReportStore(tmp_path / "b"), metrics=make_metrics(make_registry())[:1])
     assert with_2.content_hash == with_1.content_hash  # same task snapshot
     assert with_2.report_hash != with_1.report_hash  # different evaluation inputs
 
@@ -509,14 +582,16 @@ def test_degenerate_runs_are_rejected(tmp_path):
 
 def test_unknown_correction_method_is_rejected(tmp_path):
     store = ReportStore(tmp_path / "reports")
+    reg = make_registry()
     with pytest.raises(EvaluationError):
         EvaluationPipeline(correction="no-such-method").run(
             task=make_task(ds := make_dataset()),
             dataset=ds,
             baseline_runner=make_runners()[0],
             candidate_runner=make_runners()[1],
-            metrics=make_metrics(),
+            metrics=make_metrics(reg),
             redlines=[DiagnosticRedline(id="rl.x", severity=SafetyVerdictTier.WARN)],
             store=store,
+            registry=reg,
         )
     assert store.list_hashes() == []

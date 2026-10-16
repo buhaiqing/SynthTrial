@@ -22,7 +22,7 @@ PYTHONPATH=src python3 -m st_platform.cli.stctl demo --n 200 --json
 
 ```
 src/st_platform/ 各子包：common / registry / audit / dataset / task / inference / infer / safety / report / cli
-tests/   91 个测试覆盖所有切片
+tests/   215 个测试覆盖所有切片
 docs/    需求 + 架构 + superpowers 规格/计划
 ```
 

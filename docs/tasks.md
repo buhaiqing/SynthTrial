@@ -164,6 +164,7 @@
 | T-M7-10 | CI 门禁接入 `gen_dep_graph.py --check` | `grep -c 'gen_dep_graph' .github/workflows/ci.yml` ≥1 **且** `! grep -qF '|| true' .github/workflows/ci.yml` （门禁不能有一步永远为真）| — | ✅ |
 | T-M7-11 | **未检测 ≠ 已检测且无重叠** —— 无 `--train-signatures` 时不得报 `contaminated=False` / `promotable=true` | `pytest -q tests/test_cli_run.py -k without_train_signatures` | T-M7-07 | ✅ |
 | T-M7-12 | **审计台账接入真实路径且可持久化** —— 此前只有 `cmd_demo` 一个调用方且完全在内存 | `pytest -q tests/test_cli_run.py -k audit` | — | ✅ |
+| T-M7-13 | **指标注册表接入真实路径** —— 其版本/存在性保证在生产代码中 0 个调用方 | `pytest -q tests/test_evaluation_pipeline.py -k registry` | T-M7-12 | ✅ |
 
 **T-M7-11 说明：** 接通 T-M7-07 时发现一个更靠上游的缺陷。T-M7-07 要求第五要素是**真实结论**，
 但 `EvaluationPipeline.run` 写着 `set(train_signatures or ())`：缺语料与空语料被压成同一个空集，
@@ -186,6 +187,17 @@ CLI 自己的 `_load_train_signatures` 文档字符串早就写明 `None` 必须
 `cmd_run` 记 `task.submitted` / `task.completed` / `task.failed`。文件名用 `.jsonl` 是刻意的：
 `ReportStore.list_hashes()` glob `*.json`，用 `.json` 会被 `stctl reports` 当成评测结果列出来。
 变异验证 3 项（内存台账 / 删 pipeline 追加 / 改名为 `.json`），每项精确命中对应守卫、无附带损伤。
+
+**T-M7-13（已关闭）取证：** 逐个组件取证时发现的第三例「模块建好且有单测，真实路径却没人用」。
+`MetricRegistry` 提供版本历史与 `validate_metric_exists` / `latest` / `all_versions` / `list_ids`，
+但在 `src/` 内除自身模块外调用方均为 **0**；唯一构造点是 `cmd_demo`，真实路径的
+`_default_metrics()` 直接内联构造 `MetricDefinition`（version 取默认值 1），
+`EvaluationPipeline` 只 import `MetricDefinition` 而从不接触注册表。
+
+后果：报告里的 `m.accuracy@1` 没有任何东西证明它是**已登记**的那一版 ——
+spec §3 用户故事「每个报告数字都能对应到 registry ID + version」目前无法成立。
+待做方向：`run()` 必须接收注册表并**从注册表解析**指标定义，未登记的 id / 不存在的版本直接
+`EvaluationError`（失败关闭，与「未评估的 redline 不是 PASS」同一姿态）。
 
 **T-M7-07 说明：** 这曾是设计与实现的真实分歧（design.md §4.1 要求五要素，实现只校验四项 + seed），
 用户 2026-10-17 批准破坏性变更后关闭；P0 尚无落盘报告，失效面为零。

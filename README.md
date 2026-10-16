@@ -23,7 +23,7 @@ PYTHONPATH=src python3 -m st_platform.cli.stctl demo --n 200 --json
 ```
 src/st_platform/ st_platform.* packages
 ├── common/      registry / audit / dataset / task / inference / infer / safety / report / cli
-tests/ 91 tests across all slices
+tests/ 215 tests across all slices
 docs/  requirements + architecture + superpowers specs/plans
 ```
 

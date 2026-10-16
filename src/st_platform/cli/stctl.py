@@ -332,19 +332,38 @@ class SelfTestBlockRedline(DiagnosticRedline):
         return True
 
 
-def _default_metrics() -> list[MetricDefinition]:
+def _default_registry() -> MetricRegistry:
+    """The metric catalogue a real run is evaluated against (T-M7-13).
+
+    Registered here rather than constructed inline in the run so the pipeline can bind
+    every reported number to a registered id+version. P0 seeds this in code; the
+    production catalogue is a table (M11).
+    """
+    registry = MetricRegistry()
+    registry.register(
+        MetricDefinition(
+            metric_id="m.accuracy", name="accuracy", kind=MetricKind.RATE, owner="st-registry"
+        )
+    )
+    registry.register(
+        MetricDefinition(
+            metric_id="m.score", name="model_score", kind=MetricKind.SCORE, owner="st-registry"
+        )
+    )
+    return registry
+
+
+def _default_metrics(registry: MetricRegistry) -> list[MetricDefinition]:
     """Two metrics so the run has >1 test and correction is mandatory.
 
     design.md §3 M003 F3: with a single metric there is nothing to correct, and
     a one-metric run would silently skip the multiple-comparison guard.
+
+    Resolved from ``registry``, so what is measured is what is registered.
     """
     return [
-        MetricDefinition(
-            metric_id="m.accuracy", name="accuracy", kind=MetricKind.RATE, owner="st-registry"
-        ),
-        MetricDefinition(
-            metric_id="m.score", name="model_score", kind=MetricKind.SCORE, owner="st-registry"
-        ),
+        registry.all_versions("m.accuracy")[0],
+        registry.all_versions("m.score")[0],
     ]
 
 
@@ -426,6 +445,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     # Durable hash-linked evidence for this run (T-M7-12). Before this, the ledger was
     # constructed only by cmd_demo, so a real evaluation left no audit trail at all.
     ledger = AuditLedger(path=store.root / AUDIT_LOG_NAME)
+    # The metric catalogue this run is bound to (T-M7-13). The pipeline re-resolves each
+    # metric through it, so a report number always maps to a registered id + version.
+    registry = _default_registry()
 
     task = service.submit(
         model_version=candidate_version,
@@ -467,7 +489,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             dataset=dataset,
             baseline_runner=MockRunner(model_version=baseline_version),
             candidate_runner=MockRunner(model_version=candidate_version),
-            metrics=_default_metrics(),
+            metrics=_default_metrics(registry),
+            registry=registry,
             redlines=redlines,
             store=store,
             train_signatures=train_signatures,

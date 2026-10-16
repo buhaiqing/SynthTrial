@@ -29,7 +29,12 @@ from st_platform.infer import effect, multicorrect
 from st_platform.infer.paired import mcnemar, paired_t_test
 from st_platform.infer.result import PairedResult, assert_correction_applied
 from st_platform.inference.runner import run_batch
-from st_platform.registry.metrics import MetricDefinition, MetricKind
+from st_platform.registry.metrics import (
+    MetricDefinition,
+    MetricKind,
+    MetricRegistry,
+    RegistryError,
+)
 from st_platform.report.report import ReportRenderer, ReproducibilityMeta
 from st_platform.safety.checker import SafetyChecker, SafetyVerdict
 from st_platform.store import ReportStore
@@ -236,12 +241,17 @@ class EvaluationPipeline:
         metrics: Sequence[MetricDefinition],
         redlines: Sequence[Any],
         store: ReportStore,
+        registry: MetricRegistry,
         train_signatures: Iterable[str] | None = None,
         ledger: AuditLedger | None = None,
     ) -> EvaluationOutcome:
         """Evaluate the candidate against the baseline and persist the report."""
         self._check_runners(task, baseline_runner, candidate_runner)
         self._check_dataset(task, dataset)
+
+        # Bind metrics to their registered definitions before anything is measured, so
+        # an unregistered id or an unrecorded version can never reach a report (T-M7-13).
+        metrics = self._resolve_metrics(metrics, registry)
 
         pairs = self.pair_predictions(dataset, baseline_runner, candidate_runner)
         results = self.paired_statistics(pairs, metrics)
@@ -376,6 +386,36 @@ class EvaluationPipeline:
         return "\n".join(lines)
 
     # ------------------------------------------------------------------ helpers
+    @staticmethod
+    def _resolve_metrics(
+        metrics: Sequence[MetricDefinition], registry: MetricRegistry
+    ) -> list[MetricDefinition]:
+        """Replace caller-supplied definitions with the registered ones.
+
+        The registry is the authority (T-M7-13). Without this, a caller could introduce
+        an id that was never registered, a version the catalogue never recorded, or a
+        definition edited after registration, and the report would faithfully print
+        whatever it was handed — so spec §3's "every report number maps to a registry id
+        + version" was unenforceable. Fail closed, like an unevaluated redline.
+        """
+        resolved: list[MetricDefinition] = []
+        for metric in metrics:
+            try:
+                registry.validate_metric_exists(metric.metric_id)
+            except RegistryError as exc:
+                raise EvaluationError(
+                    f"metric {metric.metric_id!r} is not registered; a report number must "
+                    f"map to a registry id (registered: {registry.list_ids()})"
+                ) from exc
+            history = registry.all_versions(metric.metric_id)
+            if not 1 <= metric.version <= len(history):
+                raise EvaluationError(
+                    f"metric {metric.metric_id}@{metric.version} is not in the registry "
+                    f"history (recorded versions: 1..{len(history)})"
+                )
+            resolved.append(history[metric.version - 1])
+        return resolved
+
     @staticmethod
     def _check_runners(task: Task, baseline_runner: Any, candidate_runner: Any) -> None:
         """Bind the snapshot to the runners, so a report can never claim the wrong model."""
