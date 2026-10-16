@@ -36,6 +36,14 @@ class ReproducibilityMeta(Versioned):
     def validate_complete(self) -> None:
         required = ["model_version", "dataset_version", "dataset_sha", "code_version", "seed"]
         missing = [f for f in required if self._is_empty(getattr(self, f))]
+        # design.md §4.1 makes the contamination conclusion the fifth element.
+        # Requiring the field to be non-empty is not enough: only the shape
+        # contamination_detect() emits shows that a check actually ran, so a
+        # hand-written placeholder cannot stand in for "we checked".
+        cr = self.contamination_result
+        keys = {"eval_count", "train_overlap_count", "overlap_ratio", "contaminated", "overlap_signatures"}
+        if not (isinstance(cr, dict) and keys <= cr.keys()):
+            missing.append("contamination_result")
         if missing:
             raise ReportError(f"missing required reproducibility elements: {missing}")
 

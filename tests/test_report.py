@@ -26,7 +26,13 @@ def _meta(**overrides):
         "dataset_sha": "sha",
         "code_version": "cv",
         "seed": 7,
-        "contamination_result": {"contaminated": False},
+        "contamination_result": {
+            "eval_count": 1,
+            "train_overlap_count": 0,
+            "overlap_ratio": 0.0,
+            "contaminated": False,
+            "overlap_signatures": [],
+        },
     }
     base.update(overrides)
     return ReproducibilityMeta(**base)
@@ -35,6 +41,38 @@ def _meta(**overrides):
 def test_validate_complete_ok():
     m = _meta()
     m.validate_complete()  # no raise
+
+
+def test_validate_rejects_missing_contamination_conclusion():
+    """design.md 4.1 makes the contamination result one of the five elements.
+
+    The field was declared and rendered but never validated, so a report
+    asserting reproducibility could omit it entirely -- the fifth element was
+    documentation, not a gate.
+    """
+    m = _meta(contamination_result=None)
+    with pytest.raises(ReportError, match="contamination_result"):
+        m.validate_complete()
+
+
+def test_validate_rejects_a_placeholder_contamination_result():
+    """Presence is not a conclusion. A bare {"contaminated": false} cannot come
+    out of contamination_detect, so it means no check ever ran -- accepting it
+    would let "we could not check" pass as the fifth element (design.md 3.2)."""
+    m = _meta(contamination_result={"contaminated": False})
+    with pytest.raises(ReportError, match="contamination_result"):
+        m.validate_complete()
+
+
+def test_validate_accepts_a_real_contamination_conclusion():
+    real = {
+        "eval_count": 30,
+        "train_overlap_count": 0,
+        "overlap_ratio": 0.0,
+        "contaminated": False,
+        "overlap_signatures": [],
+    }
+    _meta(contamination_result=real).validate_complete()  # no raise
 
 
 @pytest.mark.parametrize(
