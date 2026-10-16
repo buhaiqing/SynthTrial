@@ -129,6 +129,7 @@ Q3 已解。**Q4/Q5 未解前，M006 护栏的验收标准无法定稿** —— 
 | D-6 | 护栏先于效果 | 护栏结论不参与效果分数，触发即熔断而不停等显著性；review 时先读护栏 section | §4.2 |
 | D-7 | Mutation 在隔离副本 | subagent 做 mutation/反例构造时，强调「只在 `mktemp -d` 副本」+ 列禁写路径 + dispatch 后存 shasum 指纹比对 | 2026-10-16 自复盘 FM（两次踩坑） |
 | D-8 | 新增 perf 工作按层判定 | 先声明属于 §1 的哪一层（离线批扫/分流/统计/因果），答不上来不写代码 | §2 判据一 |
+| D-9 | 工具钩子会延后改盘 | 判定「某 subagent 越界」前，先 `grep` subagent session 确认写入事实；命中为 0 则 suspect 自身 hook | pi-lens ruff autofix 是 **turn-end deferred**，会在 commit 之后才改盘 → 并行合并期 `git status` 的 `M` 可能是它而非 subagent |
 
 ### 7.1 纪律 / GCL 协同
 - 小于 5 行的 typo/注释/格式化可直接合入主分支，不经 GCL。
