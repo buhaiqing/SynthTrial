@@ -47,7 +47,6 @@ def _args(tmp_path: Path, dataset: Path, **over) -> argparse.Namespace:
         "json": False,
         "out": str(tmp_path / "sample.json"),
         "open_ui": False,
-        "train_signatures": None,
     }
     base.update(over)
     return argparse.Namespace(**base)
@@ -116,20 +115,6 @@ def test_run_exit_code_is_nonzero_when_not_promotable(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc != 0, "a BLOCK verdict must not exit 0"
     assert "BLOCK" in out
-
-
-def test_run_reports_contamination_when_training_overlaps(tmp_path, capsys):
-    """The demo could never fail its contamination check (empty train set).
-    A real run must be able to."""
-    ds = _write_dataset(tmp_path)
-    rows = json.loads(ds.read_text())["rows"]
-
-    train_sigs = [case_signature(r) for r in rows[:3]]
-    rc = cmd_run(_args(tmp_path, ds, train_signatures=train_sigs, json=True))
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["contaminated"] is True
-    assert payload["contamination_overlap"] == 3
-    assert rc != 0, "contaminated eval data must not be promotable"
 
 
 # ---------------------------------------------------------------- failure path
@@ -256,3 +241,85 @@ def test_every_subcommand_is_reachable_from_the_entry_point():
     assert proc.returncode == 0, proc.stderr
     for cmd in ("demo", "reports", "run", "sample"):
         assert cmd in proc.stdout, f"{cmd} not reachable from the CLI entry point"
+
+
+# ------------------------------------------------------- contamination is expressible
+# A 100%-contaminated evaluation set (the eval rows ARE the training rows) must be
+# BLOCKED by the real CLI. Previously `--train-signatures` was never registered in
+# build_parser, so cmd_run always saw None -> set() -> contaminated:False -> PASS.
+# The old test hid this by injecting the key into a hand-built Namespace, which
+# argparse never produces.
+
+
+def _write_dirty_dataset(tmp_path: Path, n: int = 30) -> Path:
+    """Rows that are simultaneously the evaluation set and the training corpus."""
+    rows = [{"case_id": f"C{i:04d}", "text": f"病例 {i}", "label": i % 2} for i in range(n)]
+    path = tmp_path / "dirty.json"
+    path.write_text(json.dumps({"dataset_id": "dirty", "rows": rows}, ensure_ascii=False))
+    return path
+
+
+def test_parser_exposes_train_signatures():
+    ns = build_parser().parse_args(
+        ["run", "--dataset", "d.json", "--model-version", "v2", "--train-signatures", "t.json"]
+    )
+    assert ns.train_signatures == "t.json", (
+        "the CLI must be able to express the input its own pipeline accepts"
+    )
+
+
+def test_parser_default_train_signatures_is_none():
+    ns = build_parser().parse_args(["run", "--dataset", "d.json", "--model-version", "v2"])
+    assert ns.train_signatures is None
+
+
+def test_fully_contaminated_dataset_blocks_via_the_real_cli(tmp_path):
+    """End-to-end through the script entry point: 100% contamination must not promote."""
+    ds = _write_dirty_dataset(tmp_path)
+    train_file = tmp_path / "train.json"
+    rows = json.loads(ds.read_text())["rows"]
+    train_file.write_text(json.dumps({"signatures": [case_signature(r) for r in rows]}))
+
+    proc = _as_script(
+        "run",
+        "--dataset",
+        str(ds),
+        "--model-version",
+        "v2",
+        "--train-signatures",
+        str(train_file),
+        "--store",
+        str(tmp_path / "store"),
+        "--json",
+    )
+    payload = json.loads(proc.stdout)
+    assert payload["contaminated"] is True
+    assert payload["contamination_overlap"] == len(rows)
+    assert payload["verdict"] == "BLOCK"
+    assert proc.returncode != 0, "a fully contaminated evaluation set must not exit 0"
+
+
+def test_uncontaminated_dataset_passes_via_the_real_cli(tmp_path):
+    """Negative control: the gate must be able to say PASS too, or BLOCK proves nothing."""
+    ds = _write_dataset(tmp_path)
+    train_file = tmp_path / "train.json"
+    train_file.write_text(
+        json.dumps({"signatures": [case_signature({"case_id": "Z", "text": "z"})]})
+    )
+
+    proc = _as_script(
+        "run",
+        "--dataset",
+        str(ds),
+        "--model-version",
+        "v2",
+        "--train-signatures",
+        str(train_file),
+        "--store",
+        str(tmp_path / "store"),
+        "--json",
+    )
+    payload = json.loads(proc.stdout)
+    assert payload["contaminated"] is False
+    assert payload["verdict"] == "PASS"
+    assert proc.returncode == 0

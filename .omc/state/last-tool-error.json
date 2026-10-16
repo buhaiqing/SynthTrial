@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"rtk grep -rn -A30 \\\"class SafetyChecker\\\" src/st_platform/ | head -50; echo \\\"=== DiagnosticRedline ===\\\"; rtk grep -rn -A12 \\\"class DiagnosticRedline\\\" src/st_platform/\",\"description\":\"Re...",
-  "error": "Exit code 1\nsrc/st_platform/safety/checker.py:27:class SafetyChecker:\nsrc/st_platform/safety/checker.py-28-    def __init__(self, redlines: Any = None, rules: Any = None, **kwargs) -> None:\nsrc/st_platform/safety/checker.py-29-        src = redlines if redlines is not None else rules\nsrc/st_platform/safety/checker.py-30-        if src is None:\nsrc/st_platform/safety/checker.py-31-            src = kwargs.get(\"redlines\") or kwargs.get(\"rules\") or []\nsrc/st_platform/safety/checker.py-32-        if...",
-  "timestamp": "2026-10-16T21:31:18.328Z",
-  "retry_count": 2
-}

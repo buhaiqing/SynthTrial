@@ -236,6 +236,15 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--baseline-version", default="baseline", help="baseline model version")
     run_p.add_argument("--store", default=DEFAULT_STORE_DIR, help="report store directory")
     run_p.add_argument("--seed", type=int, default=0)
+    run_p.add_argument(
+        "--train-signatures",
+        default=None,
+        help=(
+            "JSON file of training-set case signatures "
+            '({"signatures": [...]} or a bare [...]); without it the contamination '
+            "check cannot run and the report says so explicitly"
+        ),
+    )
     run_p.add_argument("--json", action="store_true", help="output JSON")
     run_p.add_argument(
         "--self-test-block",
@@ -343,6 +352,23 @@ def cmd_sample(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_train_signatures(path: str | None) -> list[str] | None:
+    """Read training-set case signatures. Returns None when not supplied.
+
+    None is meaningful and must stay distinct from an empty list: "no training
+    corpus supplied" means the contamination check could not run, which is not
+    the same claim as "checked, nothing overlapped".
+    """
+    if not path:
+        return None
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(raw, dict):
+        raw = raw.get("signatures", [])
+    if not isinstance(raw, list):
+        raise TypeError(f'{path}: expected a list of signatures or {{"signatures": [...]}}')
+    return [str(s) for s in raw]
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """Run the real evaluation pipeline and persist the report.
 
@@ -362,6 +388,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     candidate_version = getattr(args, "model_version", "candidate")
     baseline_version = getattr(args, "baseline_version", "baseline")
+    train_path = getattr(args, "train_signatures", None)
+    try:
+        train_signatures = _load_train_signatures(train_path)
+    except (OSError, ValueError, TypeError) as exc:
+        # JSONDecodeError subclasses ValueError, so bad JSON lands here too.
+        print(f"error: cannot read --train-signatures {train_path}: {exc}", file=sys.stderr)
+        return 2
     service = TaskService()
     store = ReportStore(getattr(args, "store", None) or DEFAULT_STORE_DIR)
 
@@ -398,7 +431,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             metrics=_default_metrics(),
             redlines=redlines,
             store=store,
-            train_signatures=getattr(args, "train_signatures", None),
+            train_signatures=train_signatures,
         )
     except Exception as exc:  # noqa: BLE001 -- CLI boundary: any failure is a FAILED task
         failed = service.transition(task.task_id, TaskState.FAILED)

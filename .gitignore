@@ -10,3 +10,4 @@ build/
 .runtime/
 .env
 .pi/
+.omc/
