@@ -1,5 +1,6 @@
 # SynthTrial M11 · HTTP API (FastAPI) Design Spec
 
+> Status: Done
 > Date: 2026-10-17
 > Scope: T-M11-04 FastAPI service + T-M11-05 PHI redaction hook + T-M11-06 RBAC.
 

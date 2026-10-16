@@ -1,5 +1,6 @@
 # SynthTrial M9 · P1 上线放量 · st-bucket Design Spec
 
+> Status: Done
 > Date: 2026-10-17
 > Scope: T-M9-01 (deterministic bucketing) + T-M9-02 (cross-region consistency verification)
 > Out of scope: gray release (T-M9-03), Assignment/Exposure separation (T-M9-04), st-lab (T-M9-05), shadow mode (Q6).

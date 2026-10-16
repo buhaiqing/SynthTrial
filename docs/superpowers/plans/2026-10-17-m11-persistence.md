@@ -1,4 +1,5 @@
 # SynthTrial M11 · Persistence Plan
+> Status: Done
 
 ## Slice 1 — SqlTaskService
 DoD: sqlalchemy-backed adapter + tests (SQLite).

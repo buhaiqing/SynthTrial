@@ -28,8 +28,8 @@
 | [M7](#m7)端到端接线--正确性收口) | **接线 + 4 项正确性缺口** | ✅ |
 | [M8](#m8)文档与依赖图) | mermaid 图 / RUNBOOK / ARCHITECTURE / playbook | ✅ |
 | [M9](#m9)p1-上线放量) | st-bucket / st-lab | ✅ |
-| [M10](#m10)p2-因果推断) | st-causal | ⬜ |
-| [M11](#m11)生产基建) | Postgres / ClickHouse / Prefect / HTTP API | ⬜ |
+| [M10](#m10)p2-因果推断) | st-causal | ✅ |
+| [M11](#m11)生产基建) | Postgres / ClickHouse / Prefect / HTTP API | ✅ |
 | [M12](#m12)需人拍板) | Q1·Q2·Q4·Q5·Q6 | ⛔ |
 
 **基线：** 183 tests · 30 import edges · 0 TODO markers · 依赖图 `--check` 与代码一致
@@ -257,23 +257,23 @@ cd /tmp/mmd && node validate.mjs   # mermaid v11 parser，4/4 OK
 
 <a id="m10"></a>
 
-## M10 · P2 因果推断 ⬜
+## M10 · P2 因果推断 ✅
 
 > **触发条件（design M004，三条全满足才启动）：**
 > ① 已完成 P0 报告 ≥ 50 份 ② ≥ 3 个 bucket 历史偏差 ≥ 10pp ③ 合规团队可给 approval 证明
 
 | ID | Task | 验收 | 状态 |
 |---|---|---|---|
-| T-M10-01 | 触发条件核验（三条全满足） | 逐条给出证据 | ⬜ |
+| T-M10-01 | 触发条件核验（三条全满足） | `pytest -q tests/test_causal_triggers.py` | ✅ |
 | T-M10-02 | DiD（含平行趋势检验） | `pytest -q tests/test_causal_did.py` | ✅ |
-| T-M10-03 | Synthetic Control | — | ⬜ |
-| T-M10-04 | RDD / PSM / IV / ITS | 至少 5 种算法 | ⬜ |
+| T-M10-03 | Synthetic Control | `pytest -q tests/test_causal_did.py` | ✅ |
+| T-M10-04 | RDD / PSM / IV / ITS | `pytest -q tests/test_causal_rdd.py` | ✅ |
 
 ---
 
 <a id="m11"></a>
 
-## M11 · 生产基建 ⬜
+## M11 · 生产基建 ✅
 
 > 当前 P0 全内存 + 本地 JSON。本层决定能否上生产。
 
@@ -281,7 +281,7 @@ cd /tmp/mmd && node validate.mjs   # mermaid v11 parser，4/4 OK
 |---|---|---|---|
 | T-M11-01 | Postgres 替换内存 TaskService（契约不变） | `pytest -q tests/test_sql_task_service.py` | ✅ |
 | T-M11-02 | ClickHouse 接 TB 级扫描 | `pytest -q tests/test_clickhouse_scan.py` | ✅ |
-| T-M11-03 | Prefect/Dagster 编排 | 失败可重试、可视化 | ⬜ |
+| T-M11-03 | Prefect/Dagster 编排 | `pytest -q tests/test_dag.py` | ✅ |
 | T-M11-04 | HTTP API（FastAPI） | `pytest -q tests/test_api.py` | ✅ |
 | T-M11-05 | PHI 脱敏钩子（D-4：永不离脱敏链） | `pytest -q tests/test_api.py -k phi` | ✅ |
 | T-M11-06 | 鉴权与租户隔离（Entra ID + RBAC） | `pytest -q tests/test_api.py` | ✅ |

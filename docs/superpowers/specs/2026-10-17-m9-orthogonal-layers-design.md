@@ -1,5 +1,6 @@
 # SynthTrial M9 · T-M9-06 正交/多层实验架构 Design Spec
 
+> Status: Done
 > Date: 2026-10-17
 > Scope: T-M9-06 orthogonal / multi-layer experiment architecture.
 

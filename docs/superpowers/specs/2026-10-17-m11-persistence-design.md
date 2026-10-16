@@ -1,5 +1,6 @@
 # SynthTrial M11 · Persistence (Postgres + ClickHouse) Design Spec
 
+> Status: Done
 > Date: 2026-10-17
 > Scope: T-M11-01 Postgres TaskService adapter + T-M11-02 ClickHouse scan helper.
 

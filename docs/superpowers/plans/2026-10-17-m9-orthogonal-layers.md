@@ -1,4 +1,5 @@
 # SynthTrial M9 · T-M9-06 Plan
+> Status: Done
 
 ## Slice 1 — Core model + assignment
 DoD: `layers.py` with `Experiment`, `Layer`, `assign`; tests pass.
