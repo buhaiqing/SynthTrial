@@ -271,3 +271,195 @@ v1.0 给了 P1 并列的位置。在离线评测内核下它**没有需求来源
 ```
 
 **阶段 0–2 不依赖任何在线实验能力**，可独立立项、独立交付。这是与 v1.0 最大的结构差异：**P0 阶段完全不碰分流服务**。
+
+---
+
+## 11 · 组件关系图
+
+> 以下四张图分别回答四个不同问题：**谁负责什么**、**一次评测怎么流动**、**任务状态怎么变**、**代码实际怎么依赖**。
+> 前三张是设计意图，第四张由 `src/` 实际 import 生成，两者冲突时以第四张为准。
+
+### 11.1 组件职责与分期
+
+```mermaid
+flowchart TB
+    subgraph P0["阶段 0–2 · P0 离线评测内核（可独立交付）"]
+        M006["M006 st-safety<br/>评测内核 + 护栏<br/>F1 任务生命周期 / F2 数据集治理<br/>F3 编排 / F4 红线 / F5 报告"]
+        M003["M003 st-infer<br/>配对统计引擎<br/>配对检验 / CUPED / 多重校正"]
+        M005["M005 st-ledger<br/>指标台账 + 审计账本<br/>口径唯一化 / 报告渲染"]
+    end
+
+    subgraph P1["阶段 3 · P1 上线后放量"]
+        M002["M002 st-bucket<br/>确定性分流 + 灰度放量<br/>Assignment / Exposure 分离"]
+        M001["M001 st-lab<br/>任务编排与配额"]
+    end
+
+    subgraph P2["阶段 4 · P2（触发条件见 M004）"]
+        M004["M004 st-causal<br/>DiD / Synthetic Control / RDD"]
+    end
+
+    M006 -->|"提交任务 → 产物"| M005
+    M006 -->|"配对样本 → 统计量"| M003
+    M003 -->|"p_raw / p_corrected + CI"| M005
+    M006 -.->|"护栏结论单独裁决<br/>不并入效果分数"| M005
+    M005 -.->|"过护栏才允许放量"| M002
+    M002 -.->|"真实曝光回流"| M001
+    M004 -.->|"仅在上线层暴露缺口后"| M003
+
+    classDef p0 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef p1 fill:#fff8e1,stroke:#f9a825,stroke-width:2px,stroke-dasharray: 5 3
+    classDef p2 fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,stroke-dasharray: 5 3
+    class M006,M003,M005 p0
+    class M002,M001 p1
+    class M004 p2
+```
+
+**读图要点：** 实线 = P0 内部已实现的数据流；虚线 = 后续阶段或非数据依赖。
+P0 三个模块之间没有环，`st-bucket` 一次都不出现 —— 这正是 §0 判据二的图形表达。
+
+### 11.2 一次 P0 评测的端到端数据流
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Eng as 算法工程师
+    participant CLI as stctl
+    participant Task as TaskService
+    participant DS as Dataset
+    participant Run as ModelRunner ×2
+    participant Infer as st-infer
+    participant Safe as SafetyChecker
+    participant Rpt as ReportRenderer
+    participant Store as ReportStore
+    participant Audit as AuditLedger
+
+    Eng->>CLI: stctl run --model-version v2
+    CLI->>DS: 取不可变数据集快照<br/>dataset_sha + 污染检测
+    DS-->>CLI: rows + sha256
+    CLI->>Task: submit(snapshot)
+    Task-->>CLI: task_id = t_<content_hash[:12]><br/>（相同输入 → 相同 task_id）
+    CLI->>Run: 对同一批样本各跑一次<br/>baseline / candidate
+    Run-->>CLI: 配对预测（按 case_id 对齐）
+    CLI->>Infer: 配对检验 + CUPED + 多重校正
+    Infer-->>CLI: p_raw / p_corrected + 95% CI + 效应量
+    CLI->>Safe: 护栏判定
+    Safe-->>CLI: BLOCK / WARN / PASS
+    Note over Safe,CLI: 护栏与效果分开裁决<br/>BLOCK 一票否决，不并入分数
+    CLI->>Rpt: render(repro 5 要素 + 结论)
+    Rpt-->>CLI: markdown 报告
+    CLI->>Store: save(payload)
+    Store-->>CLI: content_hash（只追加，同 hash 即同结果）
+    CLI->>Audit: append("evaluation.completed")
+    CLI-->>Eng: 报告 + content_hash
+```
+
+**失败路径：** 任一环节抛错 → 任务转 `FAILED`，**不覆盖**；重试生成**新 task_id**（`#r<n>`），
+因此历史结论永远可回溯（见 §11.3 与 AGENTS.md D-3）。
+
+### 11.3 任务状态机
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT
+    DRAFT --> SUBMITTED: submit
+    DRAFT --> OBSOLETED: 作废
+
+    SUBMITTED --> RUNNING: 开始执行
+    SUBMITTED --> FAILED: 提交期失败
+    SUBMITTED --> OBSOLETED: 作废
+
+    RUNNING --> DONE: 产出报告
+    RUNNING --> FAILED: 执行失败
+    RUNNING --> OBSOLETED: 作废
+
+    DONE --> OBSOLETED: 作废
+    FAILED --> OBSOLETED: 作废
+
+    note right of FAILED
+        FAILED 无 → RUNNING 的边。
+        重试不是状态回退，
+        而是新建一个 task
+        （attempt+1，父任务不动）。
+    end note
+
+    OBSOLETED --> [*]
+```
+
+**为什么没有 `FAILED → RUNNING`：** 这是本平台最重要的一条不变量。
+若允许回退，重试会覆盖已完结任务的产物，审计链断在最容易断的地方 —— 失败之后。
+已完结任务**只可作废，不可删除**（AGENTS.md D-3、D-5）。
+
+### 11.4 代码实际依赖方向（由 `src/` 的 import 生成）
+
+```mermaid
+flowchart LR
+    CLI["cli/stctl.py"]
+    TASK["task/"]
+    INFERENCE["inference/"]
+    INFER["infer/"]
+    SAFETY["safety/"]
+    REPORT["report/"]
+    REGISTRY["registry/"]
+    DATASET["dataset/"]
+    STORE["store/"]
+    AUDIT["audit/"]
+    COMMON["common/"]
+    EVAL["evaluation/<br/>P0 评测管线<br/>⚠️ 合并中 · 尚未落地"]
+
+    CLI --> TASK
+    CLI --> DATASET
+    CLI --> INFER
+    CLI --> SAFETY
+    CLI --> REPORT
+    CLI --> REGISTRY
+    CLI --> STORE
+    CLI --> AUDIT
+    CLI --> COMMON
+    EVAL --> TASK
+    EVAL --> INFERENCE
+    EVAL --> INFER
+    EVAL --> SAFETY
+    EVAL --> REPORT
+    EVAL --> STORE
+    EVAL --> DATASET
+
+    SAFETY --> COMMON
+    TASK --> COMMON
+    TASK --> DATASET
+    DATASET --> COMMON
+    STORE --> COMMON
+    REPORT --> SAFETY
+    INFERENCE --> COMMON
+
+    classDef leaf fill:#eceff1,stroke:#607d8b
+    classDef orch fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    class COMMON,DATASET,STORE leaf
+    class CLI,EVAL orch
+```
+
+**方向规则（评审用）：**
+
+| 规则 | 判据 |
+|---|---|
+| `common/` 不得 import 任何 `st_platform.*` | 它是所有模块的地基，出现反向依赖即架构腐化 |
+| `dataset/` 不得 import `task/`、`infer/`、`safety/` | 数据治理不认识评测语义 |
+| `safety/` 不得 import `infer/` | 护栏必须能独立于统计引擎裁决，否则效果分能反向影响护栏 |
+| `report/` 可读 `safety/`（渲染 verdict），但 `safety/` 不可读 `report/` | 单向，避免循环依赖 |
+| `cli/` 与 `evaluation/` 是编排层，可依赖其余全部 | 唯一的「什么都认识」的位置（`evaluation/` 待合并后校验） |
+
+`evaluation/`（P0 管线）与 `cli/` 同属编排层：这是 11.2 数据流在代码里的落点。
+
+### 11.5 图与代码的一致性维护
+
+新增/删除模块后必须同步的三处（漂移即缺陷）：
+
+1. 本节 11.1 的组件图 —— 缺一个模块，评审会按错的骨架规划
+2. 本节 11.4 的依赖图 —— 由 `grep -rn "^from st_platform\." src/` 重新生成
+3. `docs/ARCHITECTURE.md` §1 的包表与 §5 的 gap 列表
+
+> 判据：**图不是插画，是可执行的依赖契约。** 若 `grep` 的结果与 11.4 不符，
+> 以 `grep` 为准并修正本图 —— 图错了比缺图更危险，因为它看起来仍然自洽。
+>
+> ⚠️ `evaluation/` 节点标注为「合并中」，因为在本次编写时它尚未合入 `main`。
+> 这条规则本身就是 playbook 第 12 行的教训：**并行开发会让图立刻过期**，
+> 所以尚未落地的组件必须显式标注，而不是先画成已完成再补一句说明。
