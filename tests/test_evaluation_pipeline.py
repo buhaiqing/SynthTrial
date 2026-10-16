@@ -343,26 +343,33 @@ def test_block_rule_without_evaluator_cannot_silently_promote(tmp_path):
 def test_dataset_must_match_task_snapshot(tmp_path):
     """Critic-R1 MAJOR: the report printed the snapshot's dataset_sha while a different
     dataset was actually evaluated. §4.1: the report must answer "how was this scored".
+
+    Each dimension is exercised on its own: mutating only the id/version (keeping rows
+    identical, hence sha identical) is verified by mutation testing, so a future
+    "compare the sha only" regression cannot pass silently.
     """
-    store = ReportStore(tmp_path / "reports")
     snapshot_dataset = make_dataset()
     task = make_task(snapshot_dataset)
-    other_rows = make_dataset().rows[:5]  # different corpus -> different sha
-    other = snapshot_dataset.model_copy(
-        update={"dataset_id": "cards-OTHER", "rows": other_rows, "sha256": ""}
-    )
-    baseline, candidate = make_runners()
-    with pytest.raises(EvaluationError):
-        EvaluationPipeline().run(
-            task=task,
-            dataset=other,
-            baseline_runner=baseline,
-            candidate_runner=candidate,
-            metrics=make_metrics(),
-            redlines=[ContaminationRedline()],
-            store=store,
-        )
-    assert store.list_hashes() == []
+    variants = {
+        "different rows (sha)": {"rows": snapshot_dataset.rows[:5], "sha256": ""},
+        "same rows, different id": {"dataset_id": "cards-RENAMED"},
+        "same rows, different version": {"version": 2},
+    }
+    for label, update in variants.items():
+        store = ReportStore(tmp_path / label.replace(" ", "_").replace(",", ""))
+        other = snapshot_dataset.model_copy(update=update)
+        baseline, candidate = make_runners()
+        with pytest.raises(EvaluationError):
+            EvaluationPipeline().run(
+                task=task,
+                dataset=other,
+                baseline_runner=baseline,
+                candidate_runner=candidate,
+                metrics=make_metrics(),
+                redlines=[ContaminationRedline()],
+                store=store,
+            )
+        assert store.list_hashes() == [], label
 
 
 def test_report_carries_effect_size_and_ci(tmp_path):
