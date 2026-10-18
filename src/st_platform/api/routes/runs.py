@@ -28,7 +28,6 @@ def submit_run(req: RunRequest):
         raise HTTPException(status_code=404, detail="dataset not found")
     import json as _json
     raw = _json.loads(ds_path.read_text(encoding="utf-8"))
-    from st_platform.dataset.core import Dataset, DatasetSplit
 
     dataset = Dataset(
         dataset_id=raw.get("dataset_id", "dataset"),

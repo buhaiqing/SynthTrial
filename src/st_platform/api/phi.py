@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -30,3 +31,25 @@ def redact(obj: Any) -> Any:
     if isinstance(obj, tuple):
         return tuple(redact(v) for v in obj)
     return obj
+
+
+class RedactingFilter(logging.Filter):
+    """Logging filter that redacts PHI from record.msg and record.args in place."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            if isinstance(record.msg, str):
+                record.msg = redact_text(record.msg)
+            if record.args:
+                if isinstance(record.args, tuple):
+                    record.args = tuple(
+                        redact(a) if isinstance(a, str) else a for a in record.args
+                    )
+                elif isinstance(record.args, dict):
+                    record.args = {
+                        k: (redact(v) if isinstance(v, str) else v)
+                        for k, v in record.args.items()
+                    }
+        except Exception:  # noqa: BLE001, S110 - logging must never raise
+            pass
+        return True

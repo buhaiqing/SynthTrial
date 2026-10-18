@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 
 
 def two_sls(y, X, Z):

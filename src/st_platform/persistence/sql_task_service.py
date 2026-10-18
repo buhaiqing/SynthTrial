@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-from sqlalchemy import MetaData, Table, Column, String, Text, insert, select, update
+
+from sqlalchemy import Column, MetaData, String, Table, Text, insert, select, update
 from sqlalchemy.engine import Engine
+
+from st_platform.common.types import utcnow
 from st_platform.task.models import RETRYABLE_PARENT_STATES, Task, TaskState, TaskStateError
 from st_platform.task.service import TaskNotFound
-
 
 metadata = MetaData()
 tasks_table = Table(

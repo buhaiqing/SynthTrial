@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
 from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass

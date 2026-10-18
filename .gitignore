@@ -12,3 +12,6 @@ build/
 .pi/
 .omc/
 eval-sample.json
+
+.coverage
+.hypothesis/

@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
+from st_platform.api.phi import redact
 from st_platform.audit.ledger import AuditLedger
 from st_platform.common.freeze import freeze
 from st_platform.dataset.core import Dataset, contamination_detect
@@ -288,7 +289,7 @@ class EvaluationPipeline:
             accuracy_after=accuracy_after,
         )
         markdown = f"{markdown}\n\n{self._effect_size_section(results)}"
-        report_hash = store.save(
+        report_payload = redact(
             {
                 "task_id": task.task_id,
                 "content_hash": task.content_hash,
@@ -310,6 +311,7 @@ class EvaluationPipeline:
                 "report_markdown": markdown,
             }
         )
+        report_hash = store.save(report_payload)
 
         outcome = EvaluationOutcome(
             task_id=task.task_id,

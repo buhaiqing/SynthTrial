@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from enum import Enum
 from collections.abc import Callable
+from enum import Enum
 
 from fastapi import HTTPException, Request
 

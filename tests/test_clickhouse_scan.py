@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from st_platform.persistence.clickhouse_scan import scan_sql, partition_key
+from st_platform.persistence.clickhouse_scan import partition_key, scan_sql
 
 
 def test_scan_sql_contains_partition_and_parallelism():
