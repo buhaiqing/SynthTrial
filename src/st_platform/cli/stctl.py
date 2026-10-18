@@ -10,6 +10,7 @@ from typing import Any
 
 from st_platform.audit.ledger import AuditLedger
 from st_platform.common.types import SafetyVerdictTier, sha256_hex
+from st_platform.config import is_seed_config
 from st_platform.dataset.core import (
     Dataset,
     DatasetSplit,
@@ -430,6 +431,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     except (OSError, ValueError) as exc:
         print(f"error: cannot read dataset {ds_path}: {exc}", file=sys.stderr)
         return 2
+    if is_seed_config():
+        print("warning: redline list / kappa threshold are SEED defaults pending "
+              "compliance sign-off (Q4/Q5). Set ST_CONFIG_PATH or ST_KAPPA_THRESHOLD "
+              "to override.", file=sys.stderr)
 
     candidate_version = getattr(args, "model_version", "candidate")
     baseline_version = getattr(args, "baseline_version", "baseline")

@@ -6,6 +6,7 @@ from typing import Any
 
 from st_platform.common.types import Versioned
 from st_platform.safety.coverage import CoverageReport
+from st_platform.config import kappa_threshold as _config_kappa_threshold
 
 
 class ReportError(ValueError):
@@ -121,7 +122,8 @@ class ReportRenderer:
 
         # low-kappa subsets
         kappa_threshold = kwargs.get(
-            "kappa_threshold", kwargs.get("low_kappa_threshold", DEFAULT_KAPPA_THRESHOLD)
+            "kappa_threshold",
+            kwargs.get("low_kappa_threshold", _config_kappa_threshold()),
         )
         low_kappa_subsets = (
             kwargs.get("low_kappa_subsets")
