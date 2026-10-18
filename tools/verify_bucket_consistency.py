@@ -13,16 +13,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 
-PROGRAM = r'''
+PROGRAM = rf'''
 import json, sys
-sys.path.insert(0, %r)
+sys.path.insert(0, {str(SRC)!r})
 from st_platform.bucket import bucket
 samples = json.loads(sys.stdin.read())
 out = [bucket(s["user_id"], s["experiment_id"],
               business_line=s["business_line"], salt=s["salt"],
               n_buckets=s["n_buckets"]) for s in samples]
 print(json.dumps(out))
-''' % str(SRC)
+'''
 
 
 def make_samples(n: int) -> list[dict]:
