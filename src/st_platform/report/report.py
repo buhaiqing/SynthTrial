@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from st_platform.common.types import Versioned
-from st_platform.safety.coverage import CoverageReport
 from st_platform.config import kappa_threshold as _config_kappa_threshold
+from st_platform.safety.coverage import CoverageReport
 
 
 class ReportError(ValueError):
