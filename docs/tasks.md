@@ -293,6 +293,10 @@ cd /tmp/mmd && node validate.mjs   # mermaid v11 parser，4/4 OK
 ## M12 · 需人拍板 ⛔
 
 > 我不猜这些值。任何依赖它们的 Task 都不得开工（AGENTS.md §5「我不拍」）。
+>
+> **2026-10-18 更新**：Q4/Q5 的 *机制* 已交付（commit 3114269）：κ 阈值与红线清单
+> 现为配置驱动（`src/st_platform/config.py` + `ST_CONFIG_PATH`/`ST_KAPPA_THRESHOLD`），
+> 无配置时以 seed 默认运行并打印 warning。**值仍待合规/医学方签批**，签批后仅需更新配置文件，无需改代码。
 
 | ID | 问题 | 阻塞 | 我的倾向 | 状态 |
 |---|---|---|---|---|
